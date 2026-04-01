@@ -1,0 +1,116 @@
+{
+  "presets": [
+    {
+      "id": "wf-zoom5",
+      "label": "Waterfall 50kHz",
+      "color": "#3b82f6",
+      "icon": "📻",
+      "description": "Waterfall 50kHz",
+      "commands": [
+        "SS0640000",
+        "SS0540000",
+        "SS04+29.0"
+      ]
+    },
+    {
+      "id": "wf-zoomout",
+      "label": "Waterfall 1 MHz",
+      "color": "#3b82f6",
+      "icon": "📻",
+      "description": "Waterfall 1 MHz",
+      "commands": [
+        "SS04+13.0",
+        "SS0670000",
+        "SS0590000"
+      ]
+    },
+    {
+      "id": "aprs-on",
+      "label": "APRS ON",
+      "color": "#f59e0b",
+      "icon": "🔑",
+      "description": "włączenie APRS dla SUB VFO",
+      "commands": [
+        "VS0",
+        "FR01",
+        "BS113",
+        "MD1A",
+        "EX0601013",
+        "EX0601020",
+        "FB144800000",
+        "FR00",
+        "FT0"
+      ]
+    },
+    {
+      "id": "aprs-off",
+      "label": "APRS OFF",
+      "color": "#f59e0b",
+      "icon": "🔑",
+      "description": "wyłączenie APRS",
+      "commands": [
+        "VS0",
+        "FR01",
+        "BS113",
+        "MD14",
+        "EX0601010",
+        "FB144775000",
+        "FR00"
+      ]
+    },
+    {
+      "id": "fm-vhf",
+      "label": "Main FM VHF",
+      "color": "#10b981",
+      "icon": "📡",
+      "description": "FM na kanale wywoławczym 144.550 MHz",
+      "commands": [
+        "FA145550000",
+        "MD04",
+        "NA00"
+      ]
+    },
+    {
+      "id": "digi-ft8",
+      "label": "Digital / FT8",
+      "color": "#8b5cf6",
+      "icon": "💻",
+      "description": "Tryb DATA-USB dla FT8, WSPR i innych trybów cyfrowych — AGC SLOW",
+      "commands": [
+        "MD0C",
+        "GT03",
+        "SH0000",
+        "NA00",
+        "RL000"
+      ]
+    },
+    {
+      "id": "contest-ssb",
+      "label": "Zawody SSB",
+      "color": "#ef4444",
+      "icon": "🏆",
+      "description": "Konfiguracja do zawodów SSB — AGC FAST, kompressor mowy włączony",
+      "commands": [
+        "MD02",
+        "GT01",
+        "PR02",
+        "PL050",
+        "NA00",
+        "ST0"
+      ]
+    },
+    {
+      "id": "rtty",
+      "label": "RTTY",
+      "color": "#ec4899",
+      "icon": "⌨️",
+      "description": "RTTY-LSB — shift 170 Hz, mark 2125 Hz, AGC SLOW",
+      "commands": [
+        "MD06",
+        "GT03",
+        "NA01",
+        "RL000"
+      ]
+    }
+  ]
+}

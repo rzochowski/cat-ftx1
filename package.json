@@ -1,0 +1,23 @@
+{
+  "name": "cat-ftx1",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n serial,nuxt -c cyan,green \"node serial-server.mjs\" \"nuxt dev\"",
+    "serial": "node serial-server.mjs",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@serialport/parser-readline": "^12.0.0",
+    "concurrently": "^9.0.0",
+    "nuxt": "^3.13.0",
+    "serialport": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vue-tsc": "^2.0.0"
+  }
+}

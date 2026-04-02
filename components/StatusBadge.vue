@@ -1,7 +1,22 @@
 <template>
-  <div class="badge" :style="badgeStyle">
-    <span class="badge-label">{{ label }}</span>
-    <span class="badge-value">{{ value }}</span>
+  <div
+    class="badge"
+    :class="{ 'badge--clickable': clickable, 'badge--busy': busy }"
+    :style="badgeStyle"
+    :role="clickable ? 'button' : undefined"
+    :tabindex="clickable ? 0 : undefined"
+    :title="clickable ? (active ? `Wyłącz ${label}` : `Włącz ${label}`) : undefined"
+    @click="clickable && !busy && emit('toggle')"
+    @keydown.enter.space.prevent="clickable && !busy && emit('toggle')"
+  >
+    <span class="badge-label">
+      {{ label }}
+      <span v-if="clickable" class="badge-toggle-hint">{{ active ? '◉' : '○' }}</span>
+    </span>
+    <span class="badge-value">
+      <span v-if="busy" class="badge-spinner">⟳</span>
+      <template v-else>{{ value }}</template>
+    </span>
   </div>
 </template>
 
@@ -13,6 +28,12 @@ const props = defineProps<{
   value: string
   active?: boolean
   colorActive?: string
+  clickable?: boolean
+  busy?: boolean
+}>()
+
+const emit = defineEmits<{
+  toggle: []
 }>()
 
 const badgeStyle = computed(() => {
@@ -38,6 +59,26 @@ const badgeStyle = computed(() => {
   border-radius: 6px;
   min-width: 70px;
   transition: border-color .2s, background .2s;
+  user-select: none;
+}
+
+.badge--clickable {
+  cursor: pointer;
+}
+
+.badge--clickable:hover:not(.badge--busy) {
+  border-color: #58a6ff;
+  background: rgba(88, 166, 255, .08);
+}
+
+.badge--clickable:focus-visible {
+  outline: 2px solid #58a6ff;
+  outline-offset: 2px;
+}
+
+.badge--busy {
+  cursor: wait;
+  opacity: .7;
 }
 
 .badge-label {
@@ -47,6 +88,14 @@ const badgeStyle = computed(() => {
   color: #8b949e;
   font-weight: 600;
   margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.badge-toggle-hint {
+  font-size: 9px;
+  opacity: .7;
 }
 
 .badge-value {
@@ -54,5 +103,14 @@ const badgeStyle = computed(() => {
   font-size: 13px;
   font-weight: 700;
   color: #e6edf3;
+}
+
+.badge-spinner {
+  display: inline-block;
+  animation: spin .8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

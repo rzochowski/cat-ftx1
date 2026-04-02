@@ -44,68 +44,200 @@
     <!-- ── Main dashboard (only when connected) ── -->
     <main v-if="state.connected" class="dashboard">
 
-      <!-- TX/RX Indicator -->
-      <div class="tx-indicator" :class="{ 'tx-active': state.txState || state.mox }">
-        <span>{{ (state.txState || state.mox) ? 'TX' : 'RX' }}</span>
-        <span v-if="state.radioInfo?.hiSwr" class="swr-alarm">HI-SWR!</span>
-      </div>
+      <!-- TX/RX Indicator + FUNC KNOB row -->
+      <div class="txbar">
+        <div class="btns">
+            <button
+              class="btn tx-indicator power-off"
+              :disabled="!state.connected || funcKnobBusy"
+              @click="setFuncKnob('PS0')"
+              title="POWER OFF"
+            >POWER OFF</button>
+        </div>
+        
+        <div class="tx-indicator" :class="{ 'tx-active': state.txState || state.mox }">
+          <span>{{ (state.txState || state.mox) ? 'TX' : 'RX' }}</span>
+          <span v-if="state.radioInfo?.hiSwr" class="swr-alarm">HI-SWR!</span>
+        </div>
 
+        <div class="func-knob-widget">
+          <span class="func-knob-label">FUNC KNOB</span>:
+          <span class="func-knob-value">{{ state.funcKnob ?? '--' }}</span>
+          <div class="func-knob-btns">
+            <button
+              class="btn btn-ghost btn-sm"
+              :class="{ 'btn-active': state.funcKnob === 'D-LEVEL' }"
+              :disabled="!state.connected || funcKnobBusy"
+              @click="setFuncKnob('SF01')"
+              title="Ustaw FUNC KNOB → D-LEVEL"
+            >D-LEVEL</button>
+            <button
+              class="btn btn-ghost btn-sm"
+              :class="{ 'btn-active': state.funcKnob === 'RF POWER' }"
+              :disabled="!state.connected || funcKnobBusy"
+              @click="setFuncKnob('SF0D')"
+              title="Ustaw FUNC KNOB → RF POWER"
+            >RF POWER</button>
+            <button
+              class="btn btn-ghost btn-sm"
+              :class="{ 'btn-active': state.funcKnob === 'MIC GAIN' }"
+              :disabled="!state.connected || funcKnobBusy"
+              @click="setFuncKnob('SF07')"
+              title="Ustaw FUNC KNOB → MIC GAIN"
+            >MIC GAIN</button>
+            <button
+              class="btn btn-ghost btn-sm"
+              :class="{ 'btn-active': state.funcKnob === 'AMC LEVEL' }"
+              :disabled="!state.connected || funcKnobBusy"
+              @click="setFuncKnob('SF09')"
+              title="Ustaw FUNC KNOB → AMC LEVEL"
+            >AMC LEVEL</button>
+            <button
+              class="btn btn-ghost btn-sm"
+              :class="{ 'btn-active': state.funcKnob === 'PROC LEVEL' }"
+              :disabled="!state.connected || funcKnobBusy"
+              @click="setFuncKnob('SF08')"
+              title="Ustaw FUNC KNOB → PROC LEVEL"
+            >PROC LEVEL</button>
+            <button
+              class="btn btn-ghost btn-sm"
+              :class="{ 'btn-active': state.funcKnob === 'VOX GAIN' }"
+              :disabled="!state.connected || funcKnobBusy"
+              @click="setFuncKnob('SF0A')"
+              title="Ustaw FUNC KNOB → VOX GAIN"
+            >VOX GAIN</button>
+          </div>
+        </div>
+      </div>
+    
       <!-- ── VFO Section ── -->
       <section class="vfo-section">
         <!-- MAIN VFO -->
-        <div class="vfo-card main-card">
+        <div class="vfo-card main-card"
+          :class="{
+            'vfo-card--tx-vfo':   state.txVfo === 0,
+            'vfo-card--inactive': state.rxMode === 'single' && state.txVfo === 1,
+          }"
+        >
           <div class="vfo-header">
             <span class="vfo-label">MAIN</span>
-            <span class="mode-badge" :style="modeBadgeStyle(state.mainMode)">
-              {{ state.mainMode ?? '--' }}
-            </span>
+            <span v-if="state.txVfo === 0" class="tx-vfo-badge">TX VFO</span>
+            <select
+              class="band-sel"
+              :value="mainBandCode ?? ''"
+              :disabled="bandBusy || state.txState || state.mox"
+              @change="selectBand('0', ($event.target as HTMLSelectElement).value)"
+            >
+              <option value="" disabled>band…</option>
+              <option v-for="b in BANDS" :key="b.code" :value="b.code">{{ b.label }}</option>
+            </select>
+            <select
+              class="mode-sel"
+              :style="modeBadgeStyle(state.mainMode)"
+              :value="state.mainMode ?? ''"
+              :disabled="modeBusy || state.txState || state.mox"
+              @change="selectMode('0', ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-if="!state.mainMode" value="" disabled>--</option>
+              <option v-for="m in MODES" :key="m.code" :value="m.label">{{ m.label }}</option>
+            </select>
           </div>
-          <div class="freq-display" :class="{ 'freq-tx': state.txState || state.mox }">
-            {{ formatFreq(state.mainFreq) }}
+          <div class="freq-row">
+            <div class="freq-display" :class="{ 'freq-tx': state.txState || state.mox }">
+              {{ formatFreq(state.mainFreq) }}
+            </div>
+            <span class="freq-unit">MHz</span>
+            <div v-if="isFmMode(state.mainMode) && state.mainSqlType !== null && state.mainSqlType !== 0" class="sql-row">
+              <span class="sql-badge" :style="{ background: sqlTypeColor(state.mainSqlType) + '28', borderColor: sqlTypeColor(state.mainSqlType), color: sqlTypeColor(state.mainSqlType) }">
+                {{ sqlTypeLabel(state.mainSqlType) }}
+                <span v-if="toneDisplay(state.mainSqlType, state.mainCtcssTone, state.mainDcsCode)" class="sql-tone">{{ toneDisplay(state.mainSqlType, state.mainCtcssTone, state.mainDcsCode) }}
+                </span>
+              </span>
+            </div>
           </div>
-          <div class="freq-unit">MHz</div>
           <SMeter :value="state.mainSmeter" label="MAIN S-meter" />
+          <LevelBar :value="state.afGainMain" label="VOLUME" color="linear-gradient(90deg,#a60f0f,#c60f0f)" />
+          <LevelBar v-if="isRfGainMode(state.mainMode)" :value="state.rfGainMain" label="RF GAIN" color="linear-gradient(90deg,#f59e0b,#fcd34d)" />
+          <LevelBar v-else :value="state.sqMain" label="SQUELCH" color="linear-gradient(90deg,#f59e0b,#fcd34d)" />
+          <br/>
+          <section class="status-section">
+            <StatusBadge label="AGC" :value="state.agcMain ?? '--'" />
+            <StatusBadge label="DNR" :value="state.dnrMain != null ? String(state.dnrMain) : '--'" />
+          </section>
         </div>
 
         <!-- SUB VFO -->
-        <div class="vfo-card sub-card">
+        <div class="vfo-card sub-card"
+          :class="{
+            'vfo-card--tx-vfo':   state.txVfo === 1,
+            'vfo-card--inactive': state.rxMode === 'single' && state.txVfo === 0,
+          }"
+        >
           <div class="vfo-header">
             <span class="vfo-label">SUB</span>
-            <span class="mode-badge" :style="modeBadgeStyle(state.subMode)">
-              {{ state.subMode ?? '--' }}
+            <span v-if="state.txVfo === 1" class="tx-vfo-badge">TX VFO</span>
+            <select
+              class="band-sel"
+              :value="subBandCode ?? ''"
+              :disabled="bandBusy || state.txState || state.mox"
+              @change="selectBand('1', ($event.target as HTMLSelectElement).value)"
+            >
+              <option value="" disabled>pasmo…</option>
+              <option v-for="b in BANDS" :key="b.code" :value="b.code">{{ b.label }}</option>
+            </select>
+            <select
+              class="mode-sel"
+              :style="modeBadgeStyle(state.subMode)"
+              :value="state.subMode ?? ''"
+              :disabled="modeBusy || state.txState || state.mox"
+              @change="selectMode('1', ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-if="!state.subMode" value="" disabled>--</option>
+              <option v-for="m in MODES" :key="m.code" :value="m.label">{{ m.label }}</option>
+            </select>
+          </div>
+          <div class="freq-row">
+            <div class="freq-display freq-sub">
+              {{ formatFreq(state.subFreq) }}
+            </div>
+            <span class="freq-unit">MHz</span>
+            <div v-if="isFmMode(state.subMode) && state.subSqlType !== null && state.subSqlType !== 0" class="sql-row">
+            <span class="sql-badge" :style="{ background: sqlTypeColor(state.subSqlType) + '28', borderColor: sqlTypeColor(state.subSqlType), color: sqlTypeColor(state.subSqlType) }">
+              {{ sqlTypeLabel(state.subSqlType) }}
+              <span v-if="toneDisplay(state.subSqlType, state.subCtcssTone, state.subDcsCode)" class="sql-tone">
+              {{ toneDisplay(state.subSqlType, state.subCtcssTone, state.subDcsCode) }}
             </span>
+            </span>
+            </div>
           </div>
-          <div class="freq-display freq-sub">
-            {{ formatFreq(state.subFreq) }}
-          </div>
-          <div class="freq-unit">MHz</div>
           <SMeter :value="state.subSmeter" label="SUB S-meter" />
+          <LevelBar :value="state.afGainSub" label="VOLUME" color="linear-gradient(90deg,#3b82f6,#60a5fa)" />
+          <LevelBar v-if="isRfGainMode(state.subMode)" :value="state.rfGainSub" label="RF GAIN" color="linear-gradient(90deg,#f59e0b,#fcd34d)" />
+          <LevelBar v-else :value="state.sqSub" label="SQUELCH" color="linear-gradient(90deg,#f59e0b,#fcd34d)" />
+          <br/>
+          <section class="status-section">
+            <StatusBadge label="AGC" :value="state.agcSub ?? '--'" />
+            <StatusBadge label="DNR" :value="state.dnrSub != null ? String(state.dnrSub) : '--'" />
+          </section>
         </div>
       </section>
 
-
       <!-- ── Status Grid ── -->
       <section class="status-section">
-        <StatusBadge label="AUTO INFO" :value="state.autoInfo ? 'ON' : 'OFF'" :active="state.autoInfo" color-active="#22d3ee" />
-        <StatusBadge label="SPLIT" :value="state.split ? 'ON' : 'OFF'" :active="state.split" />
-        <StatusBadge label="MOX" :value="state.mox ? 'ON' : 'OFF'" :active="state.mox" />
-        <StatusBadge label="AGC" :value="state.agcMain ?? '--'" />
-        <StatusBadge label="RF GAIN" :value="state.rfGainMain != null ? String(state.rfGainMain) : '--'" />
-        <StatusBadge label="AF GAIN" :value="state.afGainMain != null ? String(state.afGainMain) : '--'" />
+        <StatusBadge label="SPLIT" :value="state.split ? 'ON' : 'OFF'" :active="state.split" :clickable="true" :busy="splitBusy" @toggle="toggleSplit" />
+        <StatusBadge label="MOX" :value="state.mox ? 'ON' : 'OFF'" :active="state.mox" color-active="#ef4444" :clickable="true" :busy="moxBusy" @toggle="toggleMox" />
+        <StatusBadge label="LOCK" :value="state.lock != null ? (state.lock ? 'ON' : 'OFF') : '--'" :active="state.lock === true" color-active="#f59e0b" :clickable="state.lock !== null" :busy="lockBusy" @toggle="toggleLock" />
         <StatusBadge label="PWR" :value="state.powerLevel != null ? state.powerLevel + ' W' : '--'" />
         <StatusBadge label="SCAN" :value="state.radioInfo?.scanning ? 'ON' : 'OFF'" :active="state.radioInfo?.scanning" />
-        <StatusBadge label="SQL" :value="state.radioInfo?.squelchOpen ? 'OPEN' : 'CLOSED'" :active="state.radioInfo?.squelchOpen" color-active="#22d3ee" />
+        <!-- StatusBadge label="SQL" :value="state.radioInfo?.squelchOpen ? 'OPEN' : 'CLOSED'" :active="state.radioInfo?.squelchOpen" color-active="#22d3ee" / -->
         <StatusBadge label="TUNER" :value="state.radioInfo?.tuning ? 'TUNING' : 'IDLE'" :active="state.radioInfo?.tuning" />
+        <StatusBadge label="ATT" :value="state.rfAttenuator ? 'ON' : 'OFF'" :active="state.rfAttenuator" />
         <StatusBadge label="RECORD" :value="state.radioInfo?.recording ? 'ON' : (state.radioInfo?.playing ? 'PLAY' : 'OFF')" :active="state.radioInfo?.recording || state.radioInfo?.playing" />
-      </section>
-
-      <!-- ── TX Audio Grid ── -->
-      <section class="status-section">
         <StatusBadge label="MIC GAIN" :value="state.micGain != null ? String(state.micGain) : '--'" />
         <StatusBadge label="AMC" :value="state.amcLevel != null ? String(state.amcLevel) : '--'" />
-        <StatusBadge label="SPEECH PROC" :value="speechProcLabel" :active="state.speechProc === true" color-active="#f59e0b" />
+        <StatusBadge label="SPEECH PROC" :value="speechProcLabel" :active="state.speechProc === true" color-active="#f59e0b" :clickable="state.speechProc !== null" :busy="speechProcBusy" @toggle="toggleSpeechProc" />
         <StatusBadge label="PROC LEVEL" :value="state.speechProcLevel != null ? (state.speechProcLevel === 0 ? 'OFF' : String(state.speechProcLevel)) : '--'" />
-        <StatusBadge label="VOX" :value="state.vox != null ? (state.vox ? 'ON' : 'OFF') : '--'" :active="state.vox === true" color-active="#10b981" />
+        <StatusBadge label="VOX" :value="state.vox != null ? (state.vox ? 'ON' : 'OFF') : '--'" :active="state.vox === true" color-active="#10b981" :clickable="state.vox !== null" :busy="voxBusy" @toggle="toggleVox" />
         <StatusBadge label="VOX GAIN" :value="state.voxGain != null ? String(state.voxGain) : '--'" />
       </section>
 
@@ -160,6 +292,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import SMeter from '~/components/SMeter.vue'
+import LevelBar from '~/components/LevelBar.vue'
 import StatusBadge from '~/components/StatusBadge.vue'
 import PresetButton from '~/components/PresetButton.vue'
 
@@ -195,20 +328,35 @@ interface TransceiverState {
   txState: boolean
   mox: boolean
   split: boolean
+  lock: boolean | null
   agcMain: string | null
   rfGainMain: number | null
   afGainMain: number | null
+  sqMain: number | null
   agcSub: string | null
   rfGainSub: string | null
-  afGainSub: string | null
+  afGainSub: number | null
+  sqSub: number | null
   powerLevel: number | null
   radioInfo: RadioInfo | null
   amcLevel: number | null
   micGain: number | null
   speechProc: boolean | null
   speechProcLevel: number | null
+  funcKnob: string | null
   vox: boolean | null
   voxGain: number | null
+  txVfo: 0 | 1 | null
+  rxMode: 'dual' | 'single' | null
+  mainSqlType: number | null
+  subSqlType: number | null
+  mainCtcssTone: number | null
+  subCtcssTone: number | null
+  mainDcsCode: number | null
+  subDcsCode: number | null
+  dnrMain: string | null
+  dnrSub: string | null
+  rfAttenuator: boolean
   lastUpdate: number
   error: string | null
 }
@@ -227,20 +375,32 @@ const defaultState = (): TransceiverState => ({
   txState: false,
   mox: false,
   split: false,
+  lock: null,
   agcMain: null,
   rfGainMain: null,
   afGainMain: null,
-  agcSub: null, 
-  rfGainSub: null, 
+  sqMain: null,
+  agcSub: null,
+  rfGainSub: null,
   afGainSub: null,
+  sqSub: null,
   powerLevel: null,
   radioInfo: null,
   amcLevel: null,
   micGain: null,
   speechProc: null,
   speechProcLevel: null,
+  funcKnob: null,
   vox: null,
   voxGain: null,
+  txVfo: null,
+  rxMode: null,
+  mainSqlType: null, subSqlType: null,
+  mainCtcssTone: null, subCtcssTone: null,
+  mainDcsCode: null, subDcsCode: null,
+  dnrMain: null,
+  dnrSub: null,
+  rfAttenuator: false,
   lastUpdate: Date.now(),
   error: null,
 })
@@ -270,6 +430,12 @@ const lastError = ref<string | null>(null)
 const manualCmd = ref('')
 const manualResponse = ref('')
 const presets = ref<Preset[]>([])
+const funcKnobBusy = ref(false)
+const speechProcBusy = ref(false)
+const voxBusy = ref(false)
+const splitBusy = ref(false)
+const moxBusy = ref(false)
+const lockBusy = ref(false)
 let eventSource: EventSource | null = null
 
 // ----------- computed -----------
@@ -284,6 +450,130 @@ const speechProcLabel = computed(() => {
   if (state.value.speechProc === null) return '--'
   return state.value.speechProc ? 'ON' : 'OFF'
 })
+
+// ----------- band data -----------
+
+const BANDS = [
+  { code: '00', label: '1.8 MHz',   freqMin:   1_800_000, freqMax:   2_000_000 },
+  { code: '01', label: '3.5 MHz',   freqMin:   3_500_000, freqMax:   4_000_000 },
+  { code: '02', label: '5 MHz',     freqMin:   5_000_000, freqMax:   5_500_000 },
+  { code: '03', label: '7 MHz',     freqMin:   7_000_000, freqMax:   7_300_000 },
+  { code: '04', label: '10 MHz',    freqMin:  10_000_000, freqMax:  10_200_000 },
+  { code: '05', label: '14 MHz',    freqMin:  14_000_000, freqMax:  14_400_000 },
+  { code: '06', label: '18 MHz',    freqMin:  18_000_000, freqMax:  18_200_000 },
+  { code: '07', label: '21 MHz',    freqMin:  21_000_000, freqMax:  21_500_000 },
+  { code: '08', label: '24.5 MHz',  freqMin:  24_500_000, freqMax:  25_000_000 },
+  { code: '09', label: '28 MHz',    freqMin:  28_000_000, freqMax:  30_000_000 },
+  { code: '10', label: '50 MHz',    freqMin:  50_000_000, freqMax:  54_000_000 },
+  { code: '11', label: '70 MHz/GEN',freqMin:  70_000_000, freqMax: 108_000_000 },
+  { code: '12', label: 'AIR',       freqMin: 108_000_000, freqMax: 144_000_000 },
+  { code: '13', label: '144 MHz',   freqMin: 144_000_000, freqMax: 148_000_000 },
+  { code: '14', label: '430 MHz',   freqMin: 430_000_000, freqMax: 450_000_000 },
+] as const
+
+function freqToBandCode(hz: number | null): string | null {
+  if (!hz) return null
+  return BANDS.find(b => hz >= b.freqMin && hz < b.freqMax)?.code ?? null
+}
+
+const mainBandCode = computed(() => freqToBandCode(state.value.mainFreq))
+const subBandCode  = computed(() => freqToBandCode(state.value.subFreq))
+
+const bandBusy = ref(false)
+
+async function selectBand(vfo: '0' | '1', code: string) {
+  if (bandBusy.value || !code) return
+  bandBusy.value = true
+  try {
+    // BS P1 P2 P2 ; — P1=0 main / 1 sub, P2P2=2-digit band code (zero-padded)
+    const data = await $fetch<{ response: string; state: TransceiverState }>('/api/command', {
+      method: 'POST',
+      body: { command: `BS${vfo}${code}` },
+    })
+    state.value = data.state
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    bandBusy.value = false
+  }
+}
+
+// ----------- CTCSS / DCS lookup -----------
+
+/** CTCSS tone frequencies (Hz) indexed 0–49, per FTX-1 Table 1 */
+const CTCSS_TONES: readonly number[] = [
+   67.0,  69.3,  71.9,  74.4,  77.0,  79.7,  82.5,  85.4,  88.5,  91.5,
+   94.8,  97.4, 100.0, 103.5, 107.2, 110.9, 114.8, 118.8, 123.0, 127.3,
+  131.8, 136.5, 141.3, 146.2, 151.4, 156.7, 159.8, 162.2, 165.5, 167.9,
+  171.3, 173.8, 177.3, 179.9, 183.5, 186.2, 189.9, 192.8, 196.6, 199.5,
+  203.5, 206.5, 210.7, 218.1, 225.7, 229.1, 233.6, 241.8, 250.3, 254.1,
+]
+
+/** DCS codes indexed 0–103, per FTX-1 Table 2 */
+const DCS_CODES: readonly number[] = [
+   23,  25,  26,  31,  32,  36,  43,  47,  51,  53,  54,  65,  71,  72,  73,
+   74, 114, 115, 116, 122, 125, 131, 132, 134, 143, 145, 152, 155, 156, 162,
+  165, 172, 174, 205, 212, 223, 225, 226, 243, 244, 245, 246, 251, 252, 255,
+  261, 263, 265, 266, 271, 274, 306, 311, 315, 325, 331, 332, 343, 346, 351,
+  356, 364, 365, 371, 411, 412, 413, 423, 431, 432, 445, 446, 452, 454, 455,
+  462, 464, 465, 466, 503, 506, 516, 523, 526, 532, 546, 565, 606, 612, 624,
+  627, 631, 632, 654, 662, 664, 703, 712, 723, 731, 732, 734, 743, 754,
+]
+
+const SQL_TYPE_LABELS: Record<number, string> = {
+  0: 'OFF', 1: 'CTCSS ENC', 2: 'CTCSS SQL', 3: 'DCS', 4: 'PR FREQ', 5: 'REV TONE',
+}
+
+const SQL_TYPE_COLORS: Record<number, string> = {
+  0: '#6b7280',
+  1: '#22d3ee', 2: '#22d3ee',   // CTCSS — cyan
+  3: '#a78bfa',                  // DCS   — purple
+  4: '#f59e0b', 5: '#f59e0b',   // special — amber
+}
+
+const FM_MODES = new Set(['FM', 'FM-N', 'DATA-FM', 'DATA-FM-N'])
+
+function isFmMode(mode: string | null): boolean {
+  return mode != null && FM_MODES.has(mode)
+}
+
+const RF_GAIN_MODES = new Set(['LSB', 'USB', 'CW-U', 'CW-L', 'RTTY-L', 'RTTY-U', 'DATA-L', 'DATA-U', 'PSK'])
+
+function isRfGainMode(mode: string | null): boolean {
+  return mode != null && RF_GAIN_MODES.has(mode)
+}
+
+/** Human-readable SQL type label */
+function sqlTypeLabel(type: number | null): string {
+  return type != null ? (SQL_TYPE_LABELS[type] ?? String(type)) : '--'
+}
+
+/** CSS color for the SQL type badge */
+function sqlTypeColor(type: number | null): string {
+  return type != null ? (SQL_TYPE_COLORS[type] ?? '#6b7280') : '#6b7280'
+}
+
+/**
+ * Returns the tone/code string to display next to the SQL type.
+ * For CTCSS: "127.3 Hz"; for DCS: "D156"; for type 0 (OFF): null.
+ */
+function toneDisplay(
+  sqlType: number | null,
+  ctcssTone: number | null,
+  dcsCode: number | null,
+): string | null {
+  if (sqlType === null || sqlType === 0) return null
+  if (sqlType === 3) {
+    // DCS
+    if (dcsCode === null || dcsCode < 0 || dcsCode >= DCS_CODES.length) return null
+    return `D${String(DCS_CODES[dcsCode]).padStart(3, '0')}`
+  }
+  // CTCSS (types 1, 2, 4, 5) — type 4/5 may also use the stored CTCSS tone
+  if (ctcssTone !== null && ctcssTone >= 0 && ctcssTone < CTCSS_TONES.length) {
+    return `${CTCSS_TONES[ctcssTone].toFixed(1)} Hz`
+  }
+  return null
+}
 
 // ----------- helpers -----------
 
@@ -317,6 +607,45 @@ const MODE_COLORS: Record<string, string> = {
 function modeBadgeStyle(mode: string | null) {
   const color = mode ? (MODE_COLORS[mode] ?? '#6b7280') : '#6b7280'
   return { background: color }
+}
+
+// MD command mode list: { code: CAT hex char, label: mode name }
+const MODES = [
+  { code: '0', label: 'AMS' },
+  { code: '1', label: 'LSB' },
+  { code: '2', label: 'USB' },
+  { code: '3', label: 'CW-U' },
+  { code: '7', label: 'CW-L' },
+  { code: '5', label: 'AM' },
+  { code: 'D', label: 'AM-N' },
+  { code: '4', label: 'FM' },
+  { code: 'B', label: 'FM-N' },
+  { code: '6', label: 'RTTY-L' },
+  { code: '9', label: 'RTTY-U' },
+  { code: '8', label: 'DATA-L' },
+  { code: 'C', label: 'DATA-U' },
+  { code: 'A', label: 'DATA-FM' },
+  { code: 'F', label: 'DATA-FM-N' },
+  { code: 'E', label: 'PSK' },
+  { code: 'H', label: 'C4FM-DN' },
+  { code: 'I', label: 'C4FM-VW' },
+] as const
+
+const modeBusy = ref(false)
+
+async function selectMode(vfo: '0' | '1', label: string) {
+  if (modeBusy.value || !label) return
+  const entry = MODES.find(m => m.label === label)
+  if (!entry) return
+  modeBusy.value = true
+  try {
+    // MD P1 P2 ; — P1=0 main / 1 sub, P2=mode code
+    await $fetch('/api/command', { method: 'POST', body: { command: `MD${vfo}${entry.code}` } })
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    modeBusy.value = false
+  }
 }
 
 // ----------- API calls -----------
@@ -388,9 +717,18 @@ function startEventSource() {
 
   es.onmessage = (e) => {
     try {
-      const data = JSON.parse(e.data) as TransceiverState
-      state.value = data
-      if (!data.connected) stopEventSource()
+      const msg = JSON.parse(e.data) as (TransceiverState & { _delta?: true })
+      if (msg._delta) {
+        // Delta frame — merge only the changed fields into the current state.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { _delta, ...changes } = msg
+        state.value = { ...state.value, ...(changes as Partial<TransceiverState>) }
+        if (changes.connected === false) stopEventSource()
+      } else {
+        // Full-state frame (sent on initial connect / reconnect).
+        state.value = msg as TransceiverState
+        if (!msg.connected) stopEventSource()
+      }
     } catch { /* malformed frame */ }
   }
 
@@ -420,7 +758,101 @@ async function loadPresets() {
 }
 
 function onPresetExecuted(results: CommandResult[]) {
-  pollStatus()
+  //pollStatus()
+}
+
+async function toggleSpeechProc() {
+  if (speechProcBusy.value || state.value.speechProc === null) return
+  speechProcBusy.value = true
+  try {
+    // PR P1 P2 ; — P1=0 (Speech Processor), P2: 1=OFF, 2=ON
+    const cmd = state.value.speechProc ? 'PR01' : 'PR02'
+    const data = await $fetch<{ response: string; state: TransceiverState }>('/api/command', {
+      method: 'POST',
+      body: { command: cmd },
+    })
+    state.value = data.state
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    speechProcBusy.value = false
+  }
+}
+
+async function toggleVox() {
+  if (voxBusy.value || state.value.vox === null) return
+  voxBusy.value = true
+  try {
+    // VX P1 ; — P1: 0=OFF, 1=ON
+    const cmd = state.value.vox ? 'VX0' : 'VX1'
+    const data = await $fetch<{ response: string; state: TransceiverState }>('/api/command', {
+      method: 'POST',
+      body: { command: cmd },
+    })
+    state.value = data.state
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    voxBusy.value = false
+  }
+}
+
+async function toggleLock() {
+  if (lockBusy.value || state.value.lock === null) return
+  lockBusy.value = true
+  try {
+    // LK P1 ; — P1: 0=OFF, 1=ON
+    const cmd = state.value.lock ? 'LK0' : 'LK1'
+    await $fetch('/api/command', { method: 'POST', body: { command: cmd } })
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    lockBusy.value = false
+  }
+}
+
+async function toggleMox() {
+  if (moxBusy.value) return
+  moxBusy.value = true
+  try {
+    // MX P1 ; — P1: 0=OFF, 1=ON
+    const cmd = state.value.mox ? 'MX0' : 'MX1'
+    await $fetch('/api/command', { method: 'POST', body: { command: cmd } })
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    moxBusy.value = false
+  }
+}
+
+async function toggleSplit() {
+  if (splitBusy.value) return
+  splitBusy.value = true
+  try {
+    // ST P1 ; — P1: 0=OFF, 1=ON
+    const cmd = state.value.split ? 'ST0' : 'ST1'
+    await $fetch('/api/command', { method: 'POST', body: { command: cmd } })
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    splitBusy.value = false
+  }
+}
+
+async function setFuncKnob(cmd: string) {
+  if (funcKnobBusy.value) return
+  funcKnobBusy.value = true
+  try {
+    const data = await $fetch<{ response: string; state: TransceiverState }>('/api/command', {
+      method: 'POST',
+      body: { command: cmd },
+    })
+    state.value = data.state
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    funcKnobBusy.value = false
+  }
 }
 
 async function sendManualCommand() {
@@ -625,6 +1057,11 @@ body {
   box-shadow: 0 0 16px rgba(248,81,73,.3);
 }
 
+.tx-indicator.power-off {
+  background: rgba(248,81,73,.15);
+  color: var(--red);
+}
+
 .swr-alarm {
   font-size: 13px;
   font-weight: 700;
@@ -660,11 +1097,69 @@ body {
 .main-card { border-left: 3px solid var(--accent); }
 .sub-card { border-left: 3px solid #8b5cf6; }
 
+/* TX VFO — left accent turns red, subtle glow */
+.vfo-card--tx-vfo {
+  border-left-color: var(--red) !important;
+  box-shadow: inset 0 0 0 1px rgba(248, 81, 73, .12);
+}
+
+/* Single-receive inactive VFO — greyed out, non-interactive */
+.vfo-card--inactive {
+  opacity: .35;
+  filter: grayscale(.4);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* TX VFO badge in the card header */
+.tx-vfo-badge {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--red);
+  background: rgba(248, 81, 73, .15);
+  border: 1px solid rgba(248, 81, 73, .4);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .vfo-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 10px;
+}
+
+.band-sel {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  min-width: 0;
+  transition: border-color .15s;
+}
+
+.band-sel:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.band-sel:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.band-sel:disabled {
+  opacity: .45;
+  cursor: default;
 }
 
 .vfo-label {
@@ -675,14 +1170,41 @@ body {
   font-weight: 600;
 }
 
-.mode-badge {
+.mode-sel {
+  background: #6b7280;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 4px;
-  color: #fff;
   letter-spacing: 0.5px;
+  padding: 2px 4px;
+  cursor: pointer;
+  transition: opacity .15s, filter .15s;
+  appearance: none;
+  -webkit-appearance: none;
+  text-align: center;
+}
+
+.mode-sel:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+.mode-sel:focus {
+  outline: 2px solid rgba(255,255,255,.5);
+  outline-offset: 1px;
+}
+
+.mode-sel:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.mode-sel option {
+  background: #1c2128;
+  color: #e6edf3;
+  font-weight: 600;
 }
 
 .freq-display {
@@ -699,13 +1221,18 @@ body {
 .freq-display.freq-tx { color: var(--red); }
 .freq-sub { font-size: 34px; color: #c9d1d9; }
 
+.freq-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
 .freq-unit {
   font-size: 11px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 2px;
-  margin-top: 2px;
-  margin-bottom: 12px;
 }
 
 /* ── Status section ── */
@@ -828,6 +1355,80 @@ body {
   padding: 1px 6px;
   font-family: var(--font-mono);
   color: var(--text);
+}
+
+/* ── SQL / CTCSS / DCS info row inside VFO card ── */
+.sql-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+
+.sql-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+.sql-tone {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  /*color: var(--text-muted);*/
+  color: rgb(234, 211, 238);
+}
+
+/* ── TX bar (TX indicator + FUNC KNOB widget) ── */
+.txbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.func-knob-widget {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  flex-wrap: wrap;
+}
+
+.func-knob-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.func-knob-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  min-width: 90px;
+  white-space: nowrap;
+}
+
+.func-knob-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-active {
+  background: var(--surface2);
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
 }
 
 /* ── Footer ── */

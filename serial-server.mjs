@@ -5,7 +5,7 @@
  * V8 locking issues when native addons are used inside Nuxt 3 / Nitro dev server.
  *
  * Uses CAT Auto Information (AI1) so the transceiver pushes state changes
- * automatically. Only S-meter and slow radio parameters still need periodic polling.
+ * automatically. 
  * State changes are broadcast to connected clients via Server-Sent Events (/events).
  */
 
@@ -21,7 +21,7 @@ const PORT = 3001
 // ──────────────────────────────────────────────────────────
 
 const MODE_MAP = {
-  '0': '-', '1': 'LSB', '2': 'USB', '3': 'CW-U', '4': 'FM',
+  '0': 'AMS', '1': 'LSB', '2': 'USB', '3': 'CW-U', '4': 'FM',
   '5': 'AM', '6': 'RTTY-L', '7': 'CW-L', '8': 'DATA-L', '9': 'RTTY-U',
   'A': 'DATA-FM', 'B': 'FM-N', 'C': 'DATA-U', 'D': 'AM-N', 'E': 'PSK',
   'F': 'DATA-FM-N', 'H': 'C4FM-DN', 'I': 'C4FM-VW',
@@ -30,6 +30,13 @@ const MODE_MAP = {
 const AGC_MAP = {
   '0': 'OFF', '1': 'FAST', '2': 'MID', '3': 'SLOW',
   '4': 'AUTO-F', '5': 'AUTO-M', '6': 'AUTO-S',
+}
+
+const FUNC_KNOB = {
+  '0': '-', '1': 'D-LEVEL', '2': 'PEAK', '3': 'COLOR', '4': 'CONTRAST',
+  '5': 'DIMMER', '6': '-', '7': 'MIC GAIN', '8': 'PROC LEVEL', '9': 'AMC LEVEL',
+  'A': 'VOX GAIN', 'B': 'VOX DELAY', 'C': '-', 'D': 'RF POWER', 'E': 'MONI LEVEL',
+  'F': 'CW SPEED', 'G': 'CW PITCH', 'H': 'BK-DELAY'
 }
 
 // ──────────────────────────────────────────────────────────
@@ -51,16 +58,27 @@ class SerialManager extends EventEmitter {
       mainFreq: null, subFreq: null,
       mainMode: null, subMode: null,
       mainSmeter: null, subSmeter: null,
-      txState: false, mox: false, split: false,
-      agcMain: null, rfGainMain: null, afGainMain: null,
-      agcSub: null, rfGainSub: null, afGainSub: null,
+      txState: false, mox: false, split: false, lock: null,
+      agcMain: null, rfGainMain: null, afGainMain: null, sqMain: null,
+      agcSub: null, rfGainSub: null, afGainSub: null, sqSub: null,
       powerLevel: null, radioInfo: null,
       amcLevel: null,
       micGain: null,
       speechProc: null,
       speechProcLevel: null,
+      funcKnob: null,
       vox: null,
       voxGain: null,
+      txVfo: null,       
+      rxMode: null,      
+      mainSqlType: null, 
+      subSqlType:  null, 
+      // CN command: CTCSS tone index (0-49) and DCS code index (0-103)
+      mainCtcssTone: null, subCtcssTone: null,
+      mainDcsCode:   null, subDcsCode:   null,
+      dnrMain: null,
+      dnrSub: null,
+      rfAttenuator: false,
       lastUpdate: Date.now(),
       error: null,
     }
@@ -98,7 +116,7 @@ class SerialManager extends EventEmitter {
 
         sp.on('close', () => {
           this._stopSmeterPolling()
-          this._stopParamsPolling()
+          //this._stopParamsPolling()
           this.state.connected = false
           this.state.autoInfo = false
           this.state.error = 'Port closed'
@@ -117,15 +135,35 @@ class SerialManager extends EventEmitter {
           error: null, autoInfo: false,
         }
 
-        // 1. One-time full sync to populate the initial state
-        await this._initialSync()
+        // 1. Identify radio — abort if not FTX-1
+        try {
+          const idResp = await this.sendCommand('ID', 2000)
+          const idParams = idResp.substring(2)   // strip "ID" prefix
+          if (idParams !== '0840') {
+            const msg = `Unknown radio ID: ${idParams} (expected 0840)`
+            console.error('[serial-server]', msg)
+            this.state.error = msg
+            this.emit('stateChange', this.getState())
+            sp.close()
+            reject(new Error(msg))
+            return
+          }
+          console.log('[serial-server] Radio identified: FTX-1 (ID0840)')
+        } catch (e) {
+          const msg = `ID command failed: ${e.message}`
+          console.error('[serial-server]', msg)
+          this.state.error = msg
+          this.emit('stateChange', this.getState())
+          sp.close()
+          reject(new Error(msg))
+          return
+        }
 
         // 2. Enable Auto Information — transceiver will push changes automatically
         await this._enableAutoInfo()
 
-        // 3. Start reduced polling: S-meter (real-time) + slow params
-        //this._startSmeterPolling()
-        //this._startParamsPolling()
+        // 3. Fire-and-forget initial sync (AI already active, no responses expected)
+        await this._initialSync()
 
         this.emit('stateChange', this.getState())
         resolve()
@@ -137,7 +175,6 @@ class SerialManager extends EventEmitter {
 
   async disconnect() {
     this._stopSmeterPolling()
-    this._stopParamsPolling()
 
     // Politely disable Auto Information before closing
     if (this.port?.isOpen) {
@@ -174,6 +211,15 @@ class SerialManager extends EventEmitter {
     })
   }
 
+  // ── Send a CAT command without waiting for a response (fire & forget) ──
+
+  sendCommandNoWait(cmd) {
+    if (!this.port?.isOpen) throw new Error('Not connected')
+    return new Promise((resolve, reject) => {
+      this.port.write(cmd + ';', (err) => err ? reject(err) : resolve())
+    })
+  }
+
   // ── Auto Information ───────────────────────────────────
 
   async _enableAutoInfo() {
@@ -196,19 +242,19 @@ class SerialManager extends EventEmitter {
   // ── Initial full-state sync after connect ─────────────
 
   async _initialSync() {
-    //
+    // AI mode is already active — send queries fire-and-forget.
+    // The transceiver will reply with unsolicited frames that _handleResponse will parse.
     const INIT_CMDS = ['FA', 'FB', 'MD0', 'MD1', 'TX', 'MX', 'ST', 'GT0', 'GT1', 'AG0', 'AG1', 'RG0', 'RG1', 'PC', 'RI0',
-                       'AO', 'MG', 'PR0', 'PL', 'VX', 'VG']
+                       'AO', 'MG', 'PR0', 'PL', 'VX', 'VG', 'SF', 'FR', 'FT', 'CT0', 'CT1', 'CN00', 'CN01', 'CN10', 'CN11', 'RL0', 'RL1', 'RA0', 'LK', 'SQ0', 'SQ1']
     for (const cmd of INIT_CMDS) {
       if (!this.port?.isOpen) break
-      try { await this.sendCommand(cmd, 800) } catch { /* non-fatal */ }
+      try { await this.sendCommandNoWait(cmd) } catch { /* non-fatal */ }
       await new Promise(r => setTimeout(r, 40))
     }
   }
 
   // ── S-meter polling (fast — 500 ms) ───────────────────
   // S-meter readings are never sent autonomously by AI mode.
-
   async _pollSmeter() {
     if (!this.port?.isOpen) return
     for (const cmd of ['SM0', 'SM1']) {
@@ -227,30 +273,9 @@ class SerialManager extends EventEmitter {
     if (this.smeterTimer) { clearInterval(this.smeterTimer); this.smeterTimer = null }
   }
 
-  // ── Slow params polling (3 s) ─────────────────────────
-  // AGC, RF/AF gain, power — not part of AI auto-reports.
-
-  async _pollParams() {
-    if (!this.port?.isOpen) return
-    for (const cmd of ['GT0', 'AG0', 'RG0', 'PC', 'AO', 'MG', 'PR0', 'PL', 'VX', 'VG']) {
-      if (!this.port?.isOpen) break
-      try { await this.sendCommand(cmd, 800) } catch { /* non-fatal */ }
-      await new Promise(r => setTimeout(r, 40))
-    }
-  }
-
-  _startParamsPolling() {
-    if (this.paramsTimer) clearInterval(this.paramsTimer)
-    this.paramsTimer = setInterval(() => this._pollParams(), 3000)
-  }
-
-  _stopParamsPolling() {
-    if (this.paramsTimer) { clearInterval(this.paramsTimer); this.paramsTimer = null }
-  }
 
   // ── Incoming data dispatcher ───────────────────────────
   // Works for both solicited (queued) and unsolicited (AI) responses.
-
   _handleResponse(response) {
     if (response === '?') {
       const e = this.queue.shift()
@@ -292,10 +317,6 @@ class SerialManager extends EventEmitter {
         else if (params[0] === '1') this.state.subMode = MODE_MAP[params[1]?.toUpperCase()] ?? params[1] ?? null
         break
       case 'SM': {
-        // The FTX-1 always encodes the VFO byte as '0' in the SM response body,
-        // even when replying to an SM1 query. Use the third character of the
-        // original queued command as the authoritative discriminator; fall back
-        // to params[0] only for unsolicited AI frames (sourceCmd === null).
         const vfo = sourceCmd ? sourceCmd[2] : params[0]
         if (vfo === '0') this.state.mainSmeter = parseInt(params.substring(1), 10)
         else if (vfo === '1') this.state.subSmeter = parseInt(params.substring(1), 10)
@@ -315,8 +336,13 @@ class SerialManager extends EventEmitter {
           break
       }
       case 'AG': {
-          if (params[0] === '0') this.state.afGainMain = parseInt(params.substring(1), 10); 
-          else if (params[0] === '1') this.state.afGainSub = parseInt(params.substring(1), 10); 
+          if (params[0] === '0') this.state.afGainMain = parseInt(params.substring(1), 10);
+          else if (params[0] === '1') this.state.afGainSub = parseInt(params.substring(1), 10);
+          break
+      }
+      case 'SQ': {
+          if (params[0] === '0') this.state.sqMain = parseInt(params.substring(1), 10)
+          else if (params[0] === '1') this.state.sqSub = parseInt(params.substring(1), 10)
           break
       }
       case 'PC': this.state.powerLevel = parseInt(params.substring(1), 10) || null; break
@@ -344,6 +370,17 @@ class SerialManager extends EventEmitter {
         }
         break
       }
+      case 'RL': {
+        if (params[0] === '0') {
+          this.state.dnrMain = parseInt(params.substring(1, 3), 10)
+          if (this.state.dnrMain==0) this.state.dnrMain="OFF"
+        }
+        if (params[0] === '1') {
+          this.state.dnrSub = parseInt(params.substring(1, 3), 10)
+          if (this.state.dnrSub==0) this.state.dnrSub="OFF"
+        }
+        break
+      }
       case 'RI': {
         const p = params
         if (p.length >= 8) {
@@ -357,17 +394,66 @@ class SerialManager extends EventEmitter {
         }
         break
       }
-      // IF (Info Frame) — sent automatically by AI mode on VFO/mode change
       case 'IF': {
         if (params.length >= 27) {
           const freq = parseInt(params.substring(5, 14), 10)
           if (freq > 0) this.state.mainFreq = freq
           const mode = params[21]?.toUpperCase()
           if (mode) this.state.mainMode = MODE_MAP[mode] ?? mode
-          this.state.txState = params[26] === '1' || params[26] === '2'
+          //const sqlType = parseInt(params[23], 10)
+          //this.state.mainSqlType = isNaN(sqlType) ? null : sqlType
         }
         break
       }
+      case 'OI': {
+        if (params.length >= 27) {
+          const freq = parseInt(params.substring(5, 14), 10)
+          if (freq > 0) this.state.subFreq = freq
+          const mode = params[21]?.toUpperCase()
+          if (mode) this.state.subMode = MODE_MAP[mode] ?? mode
+          //const sqlType = parseInt(params[23], 10)
+          //this.state.subSqlType = isNaN(sqlType) ? null : sqlType
+        }
+        break
+      }
+      case 'SF': {
+         const mode = params[1]?.toUpperCase()
+         if (mode) this.state.funcKnob = FUNC_KNOB[mode] ?? mode
+         break
+      }
+      case 'RA': this.state.rfAttenuator = params[1] === '1' ? 1 : 0; break
+      // FT — which side is set as transmitter (0=MAIN, 1=SUB)
+      case 'FT': this.state.txVfo = params[0] === '1' ? 1 : 0; break
+      // FR — receiver mode: "00"=Dual receive, "01"=Single receive
+      case 'FR': this.state.rxMode = params === '01' ? 'single' : 'dual'; break
+      // CT — SQL TYPE: CTP1P2; P1=VFO(0/1), P2=type(0-5)
+      // 0=OFF, 1=CTCSS ENC, 2=CTCSS ENC+DEC, 3=DCS, 4=PR FREQ, 5=REV TONE
+      case 'CT': {
+        const vfo = sourceCmd ? sourceCmd[2] : params[0]
+        const sqlType = parseInt(params[1] ?? params[0], 10)
+        if (vfo === '0') this.state.mainSqlType = isNaN(sqlType) ? null : sqlType
+        else if (vfo === '1') this.state.subSqlType = isNaN(sqlType) ? null : sqlType
+        break
+      }
+      // CN — CTCSS/DCS number: CNP1P2P3P3P3;
+      // P1=VFO(0/1), P2=type(0=CTCSS/1=DCS), P3P3P3=3-digit index
+      case 'CN': {
+        const vfo  = params[0]
+        const type = params[1]   // '0'=CTCSS, '1'=DCS
+        const num  = parseInt(params.substring(2), 10)
+        if (!isNaN(num)) {
+          if (type === '0') {
+            if (vfo === '0') this.state.mainCtcssTone = num
+            else if (vfo === '1') this.state.subCtcssTone = num
+          } else if (type === '1') {
+            if (vfo === '0') this.state.mainDcsCode = num
+            else if (vfo === '1') this.state.subDcsCode = num
+          }
+        }
+        break
+      }
+      // LK — Dial Lock (0=OFF, 1=ON)
+      case 'LK': this.state.lock = params[0] === '1'; break
       // AI — acknowledgement of AI0/AI1 command
       case 'AI': this.state.autoInfo = params[0] === '1'; break
     }
@@ -390,8 +476,51 @@ const manager = new SerialManager()
 /** Active SSE response streams — state changes are pushed to all of them. */
 const sseClients = new Set()
 
-manager.on('stateChange', (state) => {
-  const payload = `data: ${JSON.stringify(state)}\n\n`
+/**
+ * Last state that was broadcast to SSE clients.
+ * Used to compute per-field deltas so only changed data is transmitted.
+ */
+let lastBroadcastState = null
+
+/**
+ * Returns an object containing only the fields that differ between prev and next.
+ * Object-typed fields (e.g. radioInfo) are compared with JSON.stringify.
+ */
+function computeDelta(prev, next) {
+  const delta = {}
+  for (const key of Object.keys(next)) {
+    const a = prev[key]
+    const b = next[key]
+    if (a === b) continue
+    if (a !== null && b !== null && typeof a === 'object' && typeof b === 'object') {
+      if (JSON.stringify(a) === JSON.stringify(b)) continue
+    }
+    delta[key] = b
+  }
+  return delta
+}
+
+manager.on('stateChange', (newState) => {
+  if (sseClients.size === 0) {
+    // No clients — keep lastBroadcastState in sync so the first
+    // delta after a client connects is correct.
+    lastBroadcastState = { ...newState }
+    return
+  }
+
+  let payload
+  if (!lastBroadcastState) {
+    // First ever emission — send full state
+    payload = `data: ${JSON.stringify(newState)}\n\n`
+  } else {
+    const delta = computeDelta(lastBroadcastState, newState)
+    if (Object.keys(delta).length === 0) return  // nothing changed, skip
+    // Mark as delta so the client knows to merge rather than replace
+    payload = `data: ${JSON.stringify({ _delta: true, ...delta })}\n\n`
+  }
+
+  lastBroadcastState = { ...newState }
+
   for (const res of sseClients) {
     try { res.write(payload) } catch { sseClients.delete(res) }
   }
@@ -451,8 +580,12 @@ const server = http.createServer(async (req, res) => {
       res.setHeader('Connection', 'keep-alive')
       res.writeHead(200)
 
-      // Send current state immediately so the client is not stale
-      res.write(`data: ${JSON.stringify(manager.getState())}\n\n`)
+      // Send full current state immediately — client uses this as its baseline.
+      // Synchronise lastBroadcastState so subsequent deltas are relative
+      // to exactly what this client (and any others) just received.
+      const snapshot = manager.getState()
+      res.write(`data: ${JSON.stringify(snapshot)}\n\n`)
+      lastBroadcastState = { ...snapshot }
 
       sseClients.add(res)
       console.log(`[serial-server] SSE client connected (total: ${sseClients.size})`)
@@ -483,8 +616,8 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req)
       if (!body.command) return send(res, 400, { error: 'command is required' })
       const cmd = body.command.replace(/;+$/, '').trim()
-      const response = await manager.sendCommand(cmd, 15000)
-      return send(res, 200, { ok: true, response, state: manager.getState() })
+      await manager.sendCommandNoWait(cmd)
+      return send(res, 200, { ok: true, state: manager.getState() })
     }
 
     // ── POST /preset ────────────────────────────────────
@@ -493,17 +626,23 @@ const server = http.createServer(async (req, res) => {
       if (!Array.isArray(body?.commands) || body.commands.length === 0) {
         return send(res, 400, { error: 'commands array is required' })
       }
+      const noWait = manager.state.autoInfo === true
       const results = []
       for (const raw of body.commands) {
         const cmd = String(raw).replace(/;+$/, '').trim()
         if (!cmd) continue
         try {
-          const response = await manager.sendCommand(cmd, 1500)
-          results.push({ command: cmd, response, ok: true })
+          if (noWait) {
+            await manager.sendCommandNoWait(cmd)
+            results.push({ command: cmd, ok: true })
+          } else {
+            const response = await manager.sendCommand(cmd, 1500)
+            results.push({ command: cmd, response, ok: true })
+          }
         } catch (err) {
           results.push({ command: cmd, error: err.message, ok: false })
         }
-        await new Promise(r => setTimeout(r, 100))
+        await new Promise(r => setTimeout(r, 60))
       }
       const anyFailed = results.some(r => !r.ok)
       return send(res, anyFailed ? 207 : 200, { ok: !anyFailed, results, state: manager.getState() })

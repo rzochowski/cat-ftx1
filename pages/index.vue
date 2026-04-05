@@ -143,29 +143,28 @@
           <div class="vfo-header">
             <span class="vfo-label">SUB</span>
             <span v-if="state.txVfo === 1" class="tx-vfo-badge">TX/RX VFO</span>
-            <select
+            <button
               class="band-sel"
-              :value="subBandCode ?? ''"
               :disabled="bandBusy || state.txState || state.mox"
-              @change="selectBand('1', ($event.target as HTMLSelectElement).value)"
-            >
-              <option value="" disabled>band…</option>
-              <option v-for="b in BANDS" :key="b.code" :value="b.code">{{ b.label }}</option>
-            </select>
-            <select
+              @click="openBandPopup('1')"
+            >{{ subBandCode != null ? BANDS.find(b => b.code === subBandCode)?.label : 'band…' }}</button>
+            <button
               class="mode-sel"
               :style="modeBadgeStyle(state.subMode)"
-              :value="state.subMode ?? ''"
               :disabled="modeBusy || state.txState || state.mox"
-              @change="selectMode('1', ($event.target as HTMLSelectElement).value)"
-            >
-              <option v-if="!state.subMode" value="" disabled>--</option>
-              <option v-for="m in MODES" :key="m.code" :value="m.label">{{ m.label }}</option>
-            </select>
+              @click="openModePopup('1')"
+            >{{ state.subMode ?? '--' }}</button>
           </div>
           <div class="freq-row">
-            <div class="freq-display freq-sub">
+            <!--div class="freq-display freq-sub">
               {{ formatFreq(state.subFreq) }}
+            </div>
+            <div class="freq-sep" / -->
+            <div class="freq-tuner freq-sub" :class="{ 'freq-tx': state.txState || state.mox }">
+              <template v-for="(group, gi) in freqGroups(state.subFreq)" :key="gi">
+                <span v-if="gi > 0" class="freq-dot">.</span>
+                <div class="freq-group" @wheel.prevent="onFreqWheel('1', gi, $event)">{{ group }}</div>
+              </template>
             </div>
             <span class="freq-unit">MHz</span>
             <div v-if="isFmMode(state.subMode) && state.subSqlType !== null && state.subSqlType !== 0" class="sql-row">
@@ -184,8 +183,12 @@
           <br/>
           <section class="status-section">
             <StatusBadge label="AGC" :value="state.agcSub ?? '--'" />
-            <StatusBadge label="DNR" :value="state.dnrSub != null ? String(state.dnrSub) : '--'" />
+            <div class="dnr-wrap" :class="{ 'dnr-wrap--active': isDnrMode(state.subMode) }" @wheel.prevent="onDnrWheel('1', $event)">
+              <StatusBadge label="DNR" :value="state.dnrSub != null ? String(state.dnrSub) : '--'" :active="isDnrMode(state.subMode) && state.dnrSub != null && state.dnrSub !== 'OFF' && state.dnrSub !== 0" color-active="#22d3ee" />
+            </div>
             <StatusBadge label="Tone SQL" :value="state.subSqlType != null ? sqlTypeLabel(state.subSqlType) : '--'" :active="state.subSqlType>0" color-active="#10b981" :clickable="true" :busy="sqlTypeBusy" @toggle="cycleSqlType('1', state.subSqlType)" />
+            <StatusBadge label="CTCSS" :value="state.subCtcssTone != null ? (CTCSS_TONES[state.subCtcssTone]?.toFixed(1) + ' Hz') : '--'" :clickable="true" :active="ctcssPopupVfo === '1'" @toggle="openCtcssPopup('1')" />
+            <StatusBadge label="DCS" :value="state.subDcsCode != null ? ('D' + String(DCS_CODES[state.subDcsCode]).padStart(3, '0')) : '--'" :clickable="true" :active="dcsPopupVfo === '1'" @toggle="openDcsPopup('1')" />
           </section>
         </div>
 
@@ -199,29 +202,28 @@
           <div class="vfo-header">
             <span class="vfo-label">MAIN</span>
             <span v-if="state.txVfo === 0" class="tx-vfo-badge">TX/RX VFO</span>
-            <select
+            <button
                 class="band-sel"
-                :value="mainBandCode ?? ''"
                 :disabled="bandBusy || state.txState || state.mox"
-                @change="selectBand('0', ($event.target as HTMLSelectElement).value)"
-            >
-              <option value="" disabled>band…</option>
-              <option v-for="b in BANDS" :key="b.code" :value="b.code">{{ b.label }}</option>
-            </select>
-            <select
+                @click="openBandPopup('0')"
+            >{{ mainBandCode != null ? BANDS.find(b => b.code === mainBandCode)?.label : 'band…' }}</button>
+            <button
                 class="mode-sel"
                 :style="modeBadgeStyle(state.mainMode)"
-                :value="state.mainMode ?? ''"
                 :disabled="modeBusy || state.txState || state.mox"
-                @change="selectMode('0', ($event.target as HTMLSelectElement).value)"
-            >
-              <option v-if="!state.mainMode" value="" disabled>--</option>
-              <option v-for="m in MODES" :key="m.code" :value="m.label">{{ m.label }}</option>
-            </select>
+                @click="openModePopup('0')"
+            >{{ state.mainMode ?? '--' }}</button>
           </div>
           <div class="freq-row">
-            <div class="freq-display" :class="{ 'freq-tx': state.txState || state.mox }">
+            <!-- div class="freq-display" :class="{ 'freq-tx': state.txState || state.mox }">
               {{ formatFreq(state.mainFreq) }}
+            </div>
+            <div class="freq-sep" / -->
+            <div class="freq-tuner" :class="{ 'freq-tx': state.txState || state.mox }">
+              <template v-for="(group, gi) in freqGroups(state.mainFreq)" :key="gi">
+                <span v-if="gi > 0" class="freq-dot">.</span>
+                <div class="freq-group" @wheel.prevent="onFreqWheel('0', gi, $event)">{{ group }}</div>
+              </template>
             </div>
             <span class="freq-unit">MHz</span>
             <div v-if="isFmMode(state.mainMode) && state.mainSqlType !== null && state.mainSqlType !== 0" class="sql-row">
@@ -239,8 +241,12 @@
           <br/>
           <section class="status-section">
             <StatusBadge label="AGC" :value="state.agcMain ?? '--'" />
-            <StatusBadge label="DNR" :value="state.dnrMain != null ? String(state.dnrMain) : '--'" />
+            <div class="dnr-wrap" :class="{ 'dnr-wrap--active': isDnrMode(state.mainMode) }" @wheel.prevent="onDnrWheel('0', $event)">
+              <StatusBadge label="DNR" :value="state.dnrMain != null ? String(state.dnrMain) : '--'" :active="isDnrMode(state.mainMode) && state.dnrMain != null && state.dnrMain !== 'OFF' && state.dnrMain !== 0" color-active="#22d3ee" />
+            </div>
             <StatusBadge label="Tone SQL" :value="state.mainSqlType != null ? sqlTypeLabel(state.mainSqlType) : '--'" :active="state.mainSqlType>0" color-active="#10b981" :clickable="true" :busy="sqlTypeBusy" @toggle="cycleSqlType('0', state.mainSqlType)" />
+            <StatusBadge label="CTCSS" :value="state.mainCtcssTone != null ? (CTCSS_TONES[state.mainCtcssTone]?.toFixed(1) + ' Hz') : '--'" :clickable="true" :active="ctcssPopupVfo === '0'" @toggle="openCtcssPopup('0')" />
+            <StatusBadge label="DCS" :value="state.mainDcsCode != null ? ('D' + String(DCS_CODES[state.mainDcsCode]).padStart(3, '0')) : '--'" :clickable="true" :active="dcsPopupVfo === '0'" @toggle="openDcsPopup('0')" />
           </section>
         </div>
 
@@ -251,17 +257,30 @@
         <StatusBadge label="SPLIT" :value="state.split ? 'ON' : 'OFF'" :active="state.split" :clickable="true" :busy="splitBusy" @toggle="toggleSplit" />
         <StatusBadge label="MOX" :value="state.mox ? 'ON' : 'OFF'" :active="state.mox" color-active="#ef4444" :clickable="true" :busy="moxBusy" @toggle="toggleMox" />
         <StatusBadge label="LOCK" :value="state.lock != null ? (state.lock ? 'ON' : 'OFF') : '--'" :active="state.lock === true" color-active="#f59e0b" :clickable="state.lock !== null" :busy="lockBusy" @toggle="toggleLock" />
-        <StatusBadge label="PWR" :value="state.powerLevel != null ? state.powerLevel + ' W' : '--'" />
+        <div class="dnr-wrap" :class="{ 'dnr-wrap--active': state.powerLevel != null }" @wheel.prevent="onPwrWheel">
+          <StatusBadge label="PWR" :value="state.powerLevel != null ? state.powerLevel + ' W' : '--'" />
+        </div>
         <StatusBadge label="SCAN" :value="state.radioInfo?.scanning ? 'ON' : 'OFF'" :active="state.radioInfo?.scanning" />
         <StatusBadge label="TUNER" :value="state.radioInfo?.tuning ? 'TUNING' : 'IDLE'" :active="state.radioInfo?.tuning" />
-        <StatusBadge label="ATT" :value="state.rfAttenuator ? 'ON' : 'OFF'" :active="state.rfAttenuator" />
+        <StatusBadge label="ATT" :value="state.rfAttenuator ? 'ON' : 'OFF'" :active="state.rfAttenuator" color-active="#f59e0b" :clickable="attClickable" :busy="attBusy" @toggle="toggleAtt" />
         <StatusBadge label="RECORD" :value="state.radioInfo?.recording ? 'ON' : (state.radioInfo?.playing ? 'PLAY' : 'OFF')" :active="state.radioInfo?.recording || state.radioInfo?.playing" />
-        <StatusBadge label="MIC GAIN" :value="state.micGain != null ? String(state.micGain) : '--'" />
-        <StatusBadge label="AMC" :value="state.amcLevel != null ? String(state.amcLevel) : '--'" />
+        <div class="dnr-wrap" :class="{ 'dnr-wrap--active': state.micGain != null }" @wheel.prevent="onMicGainWheel">
+          <StatusBadge label="MIC GAIN" :value="state.micGain != null ? String(state.micGain) : '--'" />
+        </div>
+        <div class="dnr-wrap" :class="{ 'dnr-wrap--active': state.amcLevel != null }" @wheel.prevent="onAmcWheel">
+          <StatusBadge label="AMC" :value="state.amcLevel != null ? String(state.amcLevel) : '--'" />
+        </div>
         <StatusBadge label="MIC EQ" :value="speechProcLabel" :active="state.speechProc === true" color-active="#10b981" :clickable="state.speechProc !== null" :busy="speechProcBusy" @toggle="toggleSpeechProc" />
-        <StatusBadge label="PROC LEVEL" :value="state.speechProcLevel != null ? (state.speechProcLevel === 0 ? 'OFF' : String(state.speechProcLevel)) : '--'" />
+        <div class="dnr-wrap" :class="{ 'dnr-wrap--active': state.speechProcLevel != null }" @wheel.prevent="onProcLevelWheel">
+          <StatusBadge label="PROC LEVEL" :value="state.speechProcLevel != null ? (state.speechProcLevel === 0 ? 'OFF' : String(state.speechProcLevel)) : '--'" />
+        </div>
         <StatusBadge label="VOX" :value="state.vox != null ? (state.vox ? 'ON' : 'OFF') : '--'" :active="state.vox === true" color-active="#10b981" :clickable="state.vox !== null" :busy="voxBusy" @toggle="toggleVox" />
-        <StatusBadge label="VOX GAIN" :value="state.voxGain != null ? String(state.voxGain) : '--'" />
+        <div class="dnr-wrap" :class="{ 'dnr-wrap--active': state.voxGain != null }" @wheel.prevent="onVoxGainWheel">
+          <StatusBadge label="VOX GAIN" :value="state.voxGain != null ? String(state.voxGain) : '--'" />
+        </div>
+        <StatusBadge label="AMP HF/50MHz" :value="state.preAmpHf != null ? (['IPO','AMP1','AMP2'][state.preAmpHf] ?? '--') : '--'" :active="state.preAmpHf != null && state.preAmpHf > 0" color-active="#10b981" :clickable="state.preAmpHf !== null" :busy="preAmpBusy" @toggle="togglePreAmpHf" />
+        <StatusBadge label="AMP VHF" :value="state.preAmpVhf != null ? (state.preAmpVhf ? 'ON' : 'OFF') : '--'" :active="state.preAmpVhf === true" color-active="#10b981" :clickable="state.preAmpVhf !== null" :busy="preAmpBusy" @toggle="togglePreAmpVhf" />
+        <StatusBadge label="AMP UHF" :value="state.preAmpUhf != null ? (state.preAmpUhf ? 'ON' : 'OFF') : '--'" :active="state.preAmpUhf === true" color-active="#10b981" :clickable="state.preAmpUhf !== null" :busy="preAmpBusy" @toggle="togglePreAmpUhf" />
       </section>
 
       <!-- ── Bottom panels row ── -->
@@ -269,7 +288,7 @@
 
         <!-- Scope panel -->
         <section class="scope-panel">
-          <span class="scope-title">Band Scope</span>
+          <span class="scope-title">Band Scope {{ state.scopeSide === null ? '-' : state.scopeSide ? 'SUB' : 'MAIN' }}</span>
 
           <!-- LEVEL bar (bipolar: -30…+30, step 0.5) -->
           <div class="scope-level-row">
@@ -386,13 +405,143 @@
     </div>
 
     <footer class="footer">
-      <span>Yaesu FTX-1 · CAT Protocol · Last update: {{ lastUpdateTime }}</span>
+      <span>Yaesu FTX-1 · <span v-if="state.firmware.display">Display: {{ state.firmware.display }} · </span>
+        <span v-if="state.firmware.main">Main: {{ state.firmware.main }} · </span>
+        <span v-if="state.firmware.dsp">Dsp: {{ state.firmware.dsp }} · </span>
+        <span v-if="state.firmware.sdr">Sdr: {{ state.firmware.sdr }} · </span>
+        <span v-if="state.firmware.spa1">Opt: {{ state.firmware.spa1 }} · </span>
+        <span v-if="state.firmware.fc80">Fc80: {{ state.firmware.fc80 }} · </span> Last update: {{ lastUpdateTime }}</span>
     </footer>
+
+    <!-- ── CTCSS tone picker modal (teleported to body) ── -->
+    <Teleport to="body">
+      <div
+        v-if="ctcssPopupVfo !== null"
+        class="tone-modal-backdrop"
+        @click.self="closeCtcssPopup"
+      >
+        <div
+          ref="ctcssDialogRef"
+          class="tone-modal"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="'CTCSS Tone — ' + (ctcssPopupVfo === '0' ? 'MAIN' : 'SUB')"
+        >
+          <div class="tone-modal-header">
+            <span class="tone-modal-title">CTCSS Tone — {{ ctcssPopupVfo === '0' ? 'MAIN' : 'SUB' }}</span>
+            <button class="tone-modal-close" @click="closeCtcssPopup" aria-label="Close">✕</button>
+          </div>
+          <div class="ctcss-tone-grid">
+            <button
+              v-for="(hz, idx) in CTCSS_TONES"
+              :key="idx"
+              class="ctcss-tone-btn"
+              :class="{ 'ctcss-tone-btn--active': (ctcssPopupVfo === '0' ? state.mainCtcssTone : state.subCtcssTone) === idx }"
+              @click="selectCtcssTone(ctcssPopupVfo, idx)"
+            >{{ hz.toFixed(1) }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ── DCS code picker modal (teleported to body) ── -->
+    <Teleport to="body">
+      <div
+        v-if="dcsPopupVfo !== null"
+        class="tone-modal-backdrop"
+        @click.self="closeDcsPopup"
+      >
+        <div
+          ref="dcsDialogRef"
+          class="tone-modal tone-modal--dcs"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="'DCS Code — ' + (dcsPopupVfo === '0' ? 'MAIN' : 'SUB')"
+        >
+          <div class="tone-modal-header">
+            <span class="tone-modal-title">DCS Code — {{ dcsPopupVfo === '0' ? 'MAIN' : 'SUB' }}</span>
+            <button class="tone-modal-close" @click="closeDcsPopup" aria-label="Close">✕</button>
+          </div>
+          <div class="dcs-code-grid">
+            <button
+              v-for="(code, idx) in DCS_CODES"
+              :key="idx"
+              class="ctcss-tone-btn"
+              :class="{ 'ctcss-tone-btn--active': (dcsPopupVfo === '0' ? state.mainDcsCode : state.subDcsCode) === idx }"
+              @click="selectDcsCode(dcsPopupVfo, idx)"
+            >D{{ String(code).padStart(3, '0') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ── Mode picker modal (teleported to body) ── -->
+    <Teleport to="body">
+      <div
+        v-if="modePopupVfo !== null"
+        class="tone-modal-backdrop"
+        @click.self="closeModePopup"
+      >
+        <div
+          ref="modeDialogRef"
+          class="tone-modal mode-modal"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="'Mode — ' + (modePopupVfo === '0' ? 'MAIN' : 'SUB')"
+        >
+          <div class="tone-modal-header">
+            <span class="tone-modal-title">Mode — {{ modePopupVfo === '0' ? 'MAIN' : 'SUB' }}</span>
+            <button class="tone-modal-close" @click="closeModePopup" aria-label="Close">✕</button>
+          </div>
+          <div class="mode-btn-grid">
+            <button
+              v-for="m in MODES"
+              :key="m.code"
+              class="mode-modal-btn"
+              :style="modeBadgeStyle(m.label)"
+              :class="{ 'mode-modal-btn--active': (modePopupVfo === '0' ? state.mainMode : state.subMode) === m.label }"
+              @click="selectModeFromPopup(modePopupVfo, m.label)"
+            >{{ m.label }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ── Band picker modal (teleported to body) ── -->
+    <Teleport to="body">
+      <div
+        v-if="bandPopupVfo !== null"
+        class="tone-modal-backdrop"
+        @click.self="closeBandPopup"
+      >
+        <div
+          ref="bandDialogRef"
+          class="tone-modal band-modal"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="'Band — ' + (bandPopupVfo === '0' ? 'MAIN' : 'SUB')"
+        >
+          <div class="tone-modal-header">
+            <span class="tone-modal-title">Band — {{ bandPopupVfo === '0' ? 'MAIN' : 'SUB' }}</span>
+            <button class="tone-modal-close" @click="closeBandPopup" aria-label="Close">✕</button>
+          </div>
+          <div class="band-btn-grid">
+            <button
+              v-for="b in BANDS"
+              :key="b.code"
+              class="band-modal-btn"
+              :class="{ 'band-modal-btn--active': (bandPopupVfo === '0' ? mainBandCode : subBandCode) === b.code }"
+              @click="selectBandFromPopup(bandPopupVfo, b.code)"
+            >{{ b.label }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import SMeter from '~/components/SMeter.vue'
 import LevelBar from '~/components/LevelBar.vue'
 import StatusBadge from '~/components/StatusBadge.vue'
@@ -459,7 +608,12 @@ interface TransceiverState {
   dnrMain: string | null
   dnrSub: string | null
   rfAttenuator: boolean
+  preAmpHf: number | null
+  preAmpVhf: boolean | null
+  preAmpUhf: boolean | null
+  scopeSide: boolean | null
   scope: { mode: number | null, span: number | null, speed: number | null, level: number | null, att: number | null, color: number | null, marker: boolean | null } | null
+  firmware: { main: string | null, display: string | null, sdr: string | null, dsp: string | null, spa1: string | null, fc80: string | null } | null,
   lastUpdate: number
   error: string | null
 }
@@ -504,7 +658,12 @@ const defaultState = (): TransceiverState => ({
   dnrMain: null,
   dnrSub: null,
   rfAttenuator: false,
+  preAmpHf: null,
+  preAmpVhf: null,
+  preAmpUhf: null,
+  scopeSide: null,
   scope: null,
+  firmware: { main: null, display: null, sdr: null, dsp: null, spa1: null, fc80: null },
   lastUpdate: Date.now(),
   error: null,
 })
@@ -537,6 +696,7 @@ const presets = ref<Preset[]>([])
 const funcKnobBusy = ref(false)
 const speechProcBusy = ref(false)
 const voxBusy = ref(false)
+const preAmpBusy = ref(false)
 const splitBusy = ref(false)
 const moxBusy = ref(false)
 const lockBusy = ref(false)
@@ -585,17 +745,24 @@ const subBandCode  = computed(() => freqToBandCode(state.value.subFreq))
 
 const bandBusy = ref(false)
 const sqlTypeBusy = ref(false)
+const attBusy = ref(false)
+const attClickable = computed(() =>
+  (state.value.mainFreq != null && state.value.mainFreq < 75000000) ||
+  (state.value.subFreq  != null && state.value.subFreq  < 75000000)
+)
 
 async function selectBand(vfo: '0' | '1', code: string) {
   if (bandBusy.value || !code) return
   bandBusy.value = true
   try {
     // BS P1 P2 P2 ; — P1=0 main / 1 sub, P2P2=2-digit band code (zero-padded)
-    const data = await $fetch<{ response: string; state: TransceiverState }>('/api/command', {
+    // Do NOT assign state here — BS uses sendCommandNoWait so the returned state
+    // is pre-command (stale). The real update arrives via SSE after the transceiver
+    // processes the command.
+    await $fetch('/api/command', {
       method: 'POST',
       body: { command: `BS${vfo}${code}` },
     })
-    state.value = data.state
   } catch (e: any) {
     lastError.value = e.message
   } finally {
@@ -636,10 +803,90 @@ const SQL_TYPE_COLORS: Record<number, string> = {
   4: '#f59e0b', 5: '#f59e0b',   // special — amber
 }
 
-const FM_MODES = new Set(['FM', 'FM-N', 'DATA-FM', 'DATA-FM-N'])
+const FM_MODES = new Set(['FM', 'FM-N', 'DATA-FM', 'DATA-FM-N', 'C4FM-DN', 'C4FM-VW', 'AMS'])
 
 function isFmMode(mode: string | null): boolean {
   return mode != null && FM_MODES.has(mode)
+}
+
+const DNR_MODES = new Set(['USB', 'LSB', 'CW-U', 'CW-L', 'AM', 'AM-N', 'DATA-L', 'DATA-U', 'PSK', 'RTTY-L', 'RTTY-U'])
+
+function isDnrMode(mode: string | null): boolean {
+  return mode != null && DNR_MODES.has(mode)
+}
+
+const DNR_MIN = 0
+const DNR_MAX = 10
+
+async function onPwrWheel(event: WheelEvent) {
+  if (state.value.powerLevel == null) return
+  const next = Math.max(5, Math.min(state.value.firmware?.spa1 === null ? 10 : 100, state.value.powerLevel + (event.deltaY < 0 ? 1 : -1)))
+  const typePwr = state.value.firmware?.spa1 === null ? '1' : '2'
+
+  if (next === state.value.powerLevel) return
+  try {
+    await $fetch('/api/command', { method: 'POST', body: { command: `PC${typePwr}${String(next).padStart(3, '0')}` } })
+  } catch (e: any) {
+    lastError.value = e.message
+  }
+}
+
+async function onProcLevelWheel(event: WheelEvent) {
+  if (state.value.speechProcLevel == null) return
+  const next = Math.max(0, Math.min(100, state.value.speechProcLevel + (event.deltaY < 0 ? 1 : -1)))
+  if (next === state.value.speechProcLevel) return
+  try {
+    await $fetch('/api/command', { method: 'POST', body: { command: `PL${String(next).padStart(3, '0')}` } })
+  } catch (e: any) {
+    lastError.value = e.message
+  }
+}
+
+async function onAmcWheel(event: WheelEvent) {
+  if (state.value.amcLevel == null) return
+  const next = Math.max(1, Math.min(100, state.value.amcLevel + (event.deltaY < 0 ? 1 : -1)))
+  if (next === state.value.amcLevel) return
+  try {
+    await $fetch('/api/command', { method: 'POST', body: { command: `AO${String(next).padStart(3, '0')}` } })
+  } catch (e: any) {
+    lastError.value = e.message
+  }
+}
+
+async function onVoxGainWheel(event: WheelEvent) {
+  if (state.value.voxGain == null) return
+  const next = Math.max(0, Math.min(100, state.value.voxGain + (event.deltaY < 0 ? 1 : -1)))
+  if (next === state.value.voxGain) return
+  try {
+    await $fetch('/api/command', { method: 'POST', body: { command: `VG${String(next).padStart(3, '0')}` } })
+  } catch (e: any) {
+    lastError.value = e.message
+  }
+}
+
+async function onMicGainWheel(event: WheelEvent) {
+  if (state.value.micGain == null) return
+  const next = Math.max(0, Math.min(100, state.value.micGain + (event.deltaY < 0 ? 1 : -1)))
+  if (next === state.value.micGain) return
+  try {
+    await $fetch('/api/command', { method: 'POST', body: { command: `MG${String(next).padStart(3, '0')}` } })
+  } catch (e: any) {
+    lastError.value = e.message
+  }
+}
+
+async function onDnrWheel(vfo: '0' | '1', event: WheelEvent) {
+  const mode = vfo === '0' ? state.value.mainMode : state.value.subMode
+  if (!isDnrMode(mode)) return
+  const raw = vfo === '0' ? state.value.dnrMain : state.value.dnrSub
+  const current = (raw == null || raw === 'OFF') ? 0 : Number(raw)
+  const next = Math.max(DNR_MIN, Math.min(DNR_MAX, current + (event.deltaY < 0 ? 1 : -1)))
+  if (next === current) return
+  try {
+    await $fetch('/api/command', { method: 'POST', body: { command: `RL${vfo}${String(next).padStart(2, '0')}` } })
+  } catch (e: any) {
+    lastError.value = e.message
+  }
 }
 
 const RF_GAIN_MODES = new Set(['LSB', 'USB', 'CW-U', 'CW-L', 'RTTY-L', 'RTTY-U', 'DATA-L', 'DATA-U', 'PSK'])
@@ -686,8 +933,6 @@ const scopeLevelDisplay = computed(() => {
   const l = state.value.scope?.level
   if (l == null) return '--'
   else return l
-  //const db = (l - 0) // * 0.5
-  //return (db >= 0 ? '+' : '') + db.toFixed(1)
 })
 
 const scopeLevelFillStyle = computed(() => {
@@ -704,19 +949,22 @@ function buildScopeLevelCmd(overrides: { level?: number }): string {
   const result = (level * 0.5) - 30;
   const sign = result >= 0 ? '+' : '-';
   const abs = Math.abs(result).toFixed(1).padStart(4, '0');
-  return `SS04${sign}${abs}`
+  const side = state.value.scopeSide === null ? '0' : state.value.scopeSide? '1': '0';
+  return `SS${side}4${sign}${abs}`
 }
 
 function buildScopeSpanCmd(overrides: { span?: number }): string {
   const s = state.value.scope
   const span = overrides.span ?? s?.span ?? 0
-  return `SS05${span}0000`
+  const side = state.value.scopeSide === null ? '0' : state.value.scopeSide? '1': '0';
+  return `SS${side}5${span}0000`
 }
 
 function buildScopeSpeedCmd(overrides: { speed?: number }): string {
   const s = state.value.scope
   const speed = overrides.speed ?? s?.speed ?? 0
-  return `SS00${speed}0000`
+  const side = state.value.scopeSide === null ? '0' : state.value.scopeSide? '1': '0';
+  return `SS${side}0${speed}0000`
 }
 
 function onScopeLevelClick(e: MouseEvent) {
@@ -740,8 +988,9 @@ function setScopeSpeed(speed: number) {
 
 function buildScopeModeCmd(overrides: { mode?: number }): string {
   const s = state.value.scope
+  const side = state.value.scopeSide === null ? '0' : state.value.scopeSide? '1': '0';
   const mode = overrides.mode ?? s?.mode ?? 0
-  return `SS06${mode}0000`
+  return `SS${side}6${mode}0000`
 }
 
 function setScopeMode(mode: number) {
@@ -761,14 +1010,16 @@ function cycleScopeColor() {
   const current = state.value.scope?.color ?? 0
   const next = current >= SCOPE_COLOR_MAX ? 0 : current + 1
   const hex = next.toString(16).toUpperCase()   // 0–9, A
-  $fetch('/api/command', { method: 'POST', body: { command: `SS03${hex}0000` } })
+  const side = state.value.scopeSide === null ? '0' : state.value.scopeSide? '1': '0';
+  $fetch('/api/command', { method: 'POST', body: { command: `SS${side}3${hex}0000` } })
     .catch((e: any) => { lastError.value = e.message })
 }
 
 function toggleScopeMarker() {
   //if (state.value.scope?.marker === null) return
   const next = state.value.scope?.marker ? '0' : '1'   // 0=OFF, 1=ON
-  $fetch('/api/command', { method: 'POST', body: { command: `SS02${next}0000` } })
+  const side = state.value.scopeSide === null ? '0' : state.value.scopeSide? '1': '0';
+  $fetch('/api/command', { method: 'POST', body: { command: `SS${side}2${next}0000` } })
     .catch((e: any) => { lastError.value = e.message })
 }
 
@@ -813,6 +1064,42 @@ function formatFreq(hz: number | null): string {
   const [intPart, decPart = ''] = mhz.toFixed(6).split('.')
   const d = decPart.padEnd(6, '0')
   return `${intPart.padStart(3, ' ')}.${d.slice(0, 3)}.${d.slice(3)}`
+}
+
+/** Split frequency in Hz into three 3-digit display groups: [MHz, kHz, Hz] */
+function freqGroups(hz: number | null): [string, string, string] {
+  if (hz == null) return ['---', '---', '---']
+  const h = Math.max(0, Math.round(hz))
+  const mhz = Math.floor(h / 1_000_000)
+  const khz = Math.floor((h % 1_000_000) / 1_000)
+  const hz3 = h % 1_000
+  return [
+    String(mhz).padStart(3, '\u00a0'),  // non-breaking space → right-aligned in monospace
+    String(khz).padStart(3, '0'),
+    String(hz3).padStart(3, '0'),
+  ]
+}
+
+const FREQ_STEP_MHZ = 1_000_000
+const FREQ_STEP_HZ  = 100
+const FREQ_MIN      = 100_000       // 100 kHz
+const FREQ_MAX      = 999_999_999   // ~999 MHz
+
+async function onFreqWheel(vfo: '0' | '1', groupIdx: number, event: WheelEvent) {
+  const current = vfo === '0' ? state.value.mainFreq : state.value.subFreq
+  if (current == null) return
+  const direction = event.deltaY < 0 ? 1 : -1
+  const mode = vfo === '0' ? state.value.mainMode : state.value.subMode
+  const khzStep = mode != null && FM_MODES.has(mode) ? 5_000 : 1_000
+  const step = groupIdx === 0 ? FREQ_STEP_MHZ : groupIdx === 1 ? khzStep : FREQ_STEP_HZ
+  const newFreq = Math.max(FREQ_MIN, Math.min(FREQ_MAX, current + direction * step))
+  if (newFreq === current) return
+  const cmd = (vfo === '0' ? 'FA' : 'FB') + String(newFreq).padStart(9, '0')
+  try {
+    await $fetch('/api/command', { method: 'POST', body: { command: cmd } })
+  } catch (e: any) {
+    lastError.value = e.message
+  }
 }
 
 const MODE_COLORS: Record<string, string> = {
@@ -877,13 +1164,66 @@ async function selectMode(vfo: '0' | '1', label: string) {
   }
 }
 
+// ── Band picker modal ────────────────────────────────────
+
+const bandPopupVfo  = ref<'0' | '1' | null>(null)
+const bandDialogRef = ref<HTMLElement | null>(null)
+
+function openBandPopup(vfo: '0' | '1') {
+  bandPopupVfo.value = vfo
+  nextTick(() => {
+    const dialog = bandDialogRef.value
+    if (!dialog) return
+    const active = dialog.querySelector<HTMLElement>('.band-modal-btn--active')
+    const first  = dialog.querySelector<HTMLElement>('.band-modal-btn')
+    ;(active ?? first)?.focus()
+  })
+}
+
+function closeBandPopup() {
+  bandPopupVfo.value = null
+}
+
+async function selectBandFromPopup(vfo: '0' | '1', code: string) {
+  closeBandPopup()
+  await selectBand(vfo, code)
+}
+
+// ── Mode picker modal ────────────────────────────────────
+
+const modePopupVfo  = ref<'0' | '1' | null>(null)
+const modeDialogRef = ref<HTMLElement | null>(null)
+
+function openModePopup(vfo: '0' | '1') {
+  modePopupVfo.value = vfo
+  nextTick(() => {
+    const dialog = modeDialogRef.value
+    if (!dialog) return
+    const active = dialog.querySelector<HTMLElement>('.mode-modal-btn--active')
+    const first  = dialog.querySelector<HTMLElement>('.mode-modal-btn')
+    ;(active ?? first)?.focus()
+  })
+}
+
+function closeModePopup() {
+  modePopupVfo.value = null
+}
+
+async function selectModeFromPopup(vfo: '0' | '1', label: string) {
+  closeModePopup()
+  await selectMode(vfo, label)
+}
+
 // ----------- API calls -----------
 
 async function refreshPorts() {
   try {
     const data = await $fetch<{ ports: PortInfo[] }>('/api/ports')
     ports.value = data.ports
-    if (!selectedPort.value && data.ports.length > 0) {
+    const savedPort = localStorage.getItem('cat_port')
+    if (savedPort && data.ports.some(p => p.path === savedPort)) {
+      selectedPort.value = savedPort
+    } else if (!selectedPort.value && data.ports.length > 0) {
       selectedPort.value = data.ports[0].path
     }
   } catch (e: any) {
@@ -915,6 +1255,8 @@ async function toggleConnection() {
         body: { port: selectedPort.value, baudRate: selectedBaud.value },
       })
       state.value = data.state
+      localStorage.setItem('cat_port', selectedPort.value)
+      localStorage.setItem('cat_baud', String(selectedBaud.value))
       startEventSource()
     } catch (e: any) {
       lastError.value = e.message ?? 'Connection failed'
@@ -1022,6 +1364,62 @@ async function toggleVox() {
     lastError.value = e.message
   } finally {
     voxBusy.value = false
+  }
+}
+
+async function togglePreAmpHf() {
+  if (preAmpBusy.value || state.value.preAmpHf === null) return
+  preAmpBusy.value = true
+  try {
+    // PA 0 P2 ; — P2: 0=IPO, 1=AMP1, 2=AMP2 (cycles 0→1→2→0)
+    const next = ((state.value.preAmpHf) + 1) % 3
+    await $fetch('/api/command', { method: 'POST', body: { command: `PA0${next}` } })
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    preAmpBusy.value = false
+  }
+}
+
+async function togglePreAmpVhf() {
+  if (preAmpBusy.value || state.value.preAmpVhf === null) return
+  preAmpBusy.value = true
+  try {
+    // PA P1 P2 ; — P1=1 (VHF), P2: 0=OFF, 1=ON
+    const cmd = state.value.preAmpVhf ? 'PA10' : 'PA11'
+    await $fetch('/api/command', { method: 'POST', body: { command: cmd } })
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    preAmpBusy.value = false
+  }
+}
+
+async function togglePreAmpUhf() {
+  if (preAmpBusy.value || state.value.preAmpUhf === null) return
+  preAmpBusy.value = true
+  try {
+    // PA P1 P2 ; — P1=2 (UHF), P2: 0=OFF, 1=ON
+    const cmd = state.value.preAmpUhf ? 'PA20' : 'PA21'
+    await $fetch('/api/command', { method: 'POST', body: { command: cmd } })
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    preAmpBusy.value = false
+  }
+}
+
+async function toggleAtt() {
+  if (attBusy.value) return
+  attBusy.value = true
+  try {
+    // RA 0 P2 ; — P2: 0=OFF, 1=ON
+    const cmd = state.value.rfAttenuator ? 'RA00' : 'RA01'
+    await $fetch('/api/command', { method: 'POST', body: { command: cmd } })
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    attBusy.value = false
   }
 }
 
@@ -1144,9 +1542,73 @@ async function sendManualCommand() {
   }
 }
 
+// ── CTCSS tone picker modal ──────────────────────────────
+
+const ctcssPopupVfo  = ref<'0' | '1' | null>(null)
+const ctcssDialogRef = ref<HTMLElement | null>(null)
+
+function openCtcssPopup(vfo: '0' | '1') {
+  ctcssPopupVfo.value = vfo
+  nextTick(() => {
+    const dialog = ctcssDialogRef.value
+    if (!dialog) return
+    const active = dialog.querySelector<HTMLElement>('.ctcss-tone-btn--active')
+    const first  = dialog.querySelector<HTMLElement>('.ctcss-tone-btn')
+    ;(active ?? first)?.focus()
+  })
+}
+
+function closeCtcssPopup() {
+  ctcssPopupVfo.value = null
+}
+
+async function selectCtcssTone(vfo: '0' | '1', idx: number) {
+  closeCtcssPopup()
+  try {
+    // CN P1 P2 P3P3P3 — P1=VFO(0/1), P2=0(CTCSS), P3P3P3=3-digit zero-padded index
+    const cmd = `CN${vfo}0${String(idx).padStart(3, '0')}`
+    await $fetch('/api/command', { method: 'POST', body: { command: cmd } })
+  } catch (e: any) {
+    lastError.value = e.message
+  }
+}
+
+// ── DCS code picker modal ────────────────────────────────
+
+const dcsPopupVfo  = ref<'0' | '1' | null>(null)
+const dcsDialogRef = ref<HTMLElement | null>(null)
+
+function openDcsPopup(vfo: '0' | '1') {
+  dcsPopupVfo.value = vfo
+  nextTick(() => {
+    const dialog = dcsDialogRef.value
+    if (!dialog) return
+    const active = dialog.querySelector<HTMLElement>('.ctcss-tone-btn--active')
+    const first  = dialog.querySelector<HTMLElement>('.ctcss-tone-btn')
+    ;(active ?? first)?.focus()
+  })
+}
+
+function closeDcsPopup() {
+  dcsPopupVfo.value = null
+}
+
+async function selectDcsCode(vfo: '0' | '1', idx: number) {
+  closeDcsPopup()
+  try {
+    // CN P1 P2 P3P3P3 — P1=VFO(0/1), P2=1(DCS), P3P3P3=3-digit zero-padded index
+    const cmd = `CN${vfo}1${String(idx).padStart(3, '0')}`
+    await $fetch('/api/command', { method: 'POST', body: { command: cmd } })
+  } catch (e: any) {
+    lastError.value = e.message
+  }
+}
+
 // ----------- lifecycle -----------
 
 onMounted(async () => {
+  const savedBaud = localStorage.getItem('cat_baud')
+  if (savedBaud) selectedBaud.value = Number(savedBaud)
   await Promise.all([refreshPorts(), loadPresets()])
   // Sync with server state (e.g. after page reload while transceiver is already connected)
   const s = await $fetch<TransceiverState>('/api/status')
@@ -1420,11 +1882,59 @@ body {
   font-family: var(--font-mono);
   cursor: pointer;
   min-width: 0;
+  text-align: center;
+  white-space: nowrap;
   transition: border-color .15s;
 }
 
 .band-sel:hover:not(:disabled) {
   border-color: var(--accent);
+}
+
+/* ── Band picker modal ── */
+.band-modal {
+  width: 280px;
+}
+
+.band-btn-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 12px;
+}
+
+.band-modal-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 9px 4px;
+  background: var(--surface-2, #1e2330);
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+  transition: background .1s, border-color .1s;
+  outline: none;
+}
+
+.band-modal-btn:hover {
+  background: rgba(59, 130, 246, .2);
+  border-color: #3b82f6;
+  color: #93c5fd;
+}
+
+.band-modal-btn:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+}
+
+.band-modal-btn--active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: #fff;
+  font-weight: 700;
 }
 
 .band-sel:focus {
@@ -1454,16 +1964,56 @@ body {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  padding: 2px 4px;
+  padding: 2px 8px;
   cursor: pointer;
-  transition: opacity .15s, filter .15s;
-  appearance: none;
-  -webkit-appearance: none;
+  transition: filter .15s;
   text-align: center;
+  white-space: nowrap;
 }
 
 .mode-sel:hover:not(:disabled) {
   filter: brightness(1.15);
+}
+
+/* ── Mode picker modal ── */
+.mode-modal {
+  width: 300px;
+}
+
+.mode-btn-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 12px;
+}
+
+.mode-modal-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 9px 4px;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  text-align: center;
+  transition: filter .1s, border-color .1s;
+  outline: none;
+}
+
+.mode-modal-btn:hover {
+  filter: brightness(1.2);
+}
+
+.mode-modal-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, .8);
+  outline-offset: 1px;
+}
+
+.mode-modal-btn--active {
+  border-color: #fff;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .35);
 }
 
 .mode-sel:focus {
@@ -1509,6 +2059,57 @@ body {
 
 .freq-display.freq-tx { color: var(--red); }
 .freq-sub { font-size: 34px; color: #c9d1d9; }
+
+.freq-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+  margin: 2px 6px;
+  flex-shrink: 0;
+}
+
+.freq-tuner {
+  display: flex;
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: 42px;
+  font-weight: 300;
+  letter-spacing: 2px;
+  color: #e6edf3;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.freq-tuner.freq-sub { font-size: 34px; color: #c9d1d9; }
+.freq-tuner.freq-tx  { color: var(--red); }
+
+.freq-dot {
+  color: var(--text-muted);
+  pointer-events: none;
+  user-select: none;
+  letter-spacing: 0;
+  margin: 0 3px;
+}
+
+.freq-group {
+  display: inline-block;
+  width: 3ch;
+  text-align: right;
+  cursor: ns-resize;
+  border-radius: 4px;
+  padding: 0 2px;
+  user-select: none;
+  transition: background .1s, color .1s;
+}
+
+.freq-group:hover {
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+}
+
+.freq-tuner.freq-tx .freq-group:hover {
+  background: rgba(239, 68, 68, .2);
+}
 
 .freq-row {
   display: flex;
@@ -1888,6 +2489,128 @@ body {
   border-top: 1px solid var(--border);
   font-size: 11px;
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+.footer-fw {
+  font-family: var(--font-mono);
+  color: var(--text-dim, #9ca3af);
+  letter-spacing: 0.04em;
+}
+
+/* ── DNR wheel wrapper ── */
+.dnr-wrap { display: inline-flex; }
+.dnr-wrap--active { cursor: ns-resize; }
+
+/* ── CTCSS / DCS tone picker modals ── */
+.tone-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, .65);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tone-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .85);
+  width: 360px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tone-modal--dcs {
+  width: 450px;
+}
+
+.tone-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 9px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.tone-modal-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-dim, #9ca3af);
+}
+
+.tone-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-dim, #9ca3af);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background .1s, color .1s;
+}
+
+.tone-modal-close:hover {
+  background: rgba(255, 255, 255, .1);
+  color: var(--text);
+}
+
+.ctcss-tone-grid,
+.dcs-code-grid {
+  padding: 10px;
+  overflow-y: auto;
+  display: grid;
+  gap: 4px;
+}
+
+.ctcss-tone-grid {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.dcs-code-grid {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+.ctcss-tone-btn {
+  font-size: 10px;
+  padding: 6px 2px;
+  background: var(--surface-2, #1e2330);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
   text-align: center;
+  transition: background .1s, border-color .1s, outline .1s;
+  outline: none;
+}
+
+.ctcss-tone-btn:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+}
+
+.ctcss-tone-btn:hover {
+  background: rgba(59, 130, 246, .25);
+  border-color: #3b82f6;
+  color: #93c5fd;
+}
+
+.ctcss-tone-btn--active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: #fff;
+  font-weight: 700;
 }
 </style>

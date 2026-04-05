@@ -15,6 +15,7 @@ import { SerialPort } from 'serialport'
 import { ReadlineParser } from '@serialport/parser-readline'
 
 const PORT = 3001
+const DEBUG = false
 
 // ──────────────────────────────────────────────────────────
 // CAT decode maps
@@ -79,8 +80,13 @@ class SerialManager extends EventEmitter {
       dnrMain: null,
       dnrSub: null,
       rfAttenuator: false,
+      preAmpHf: null,
+      preAmpVhf: null,
+      preAmpUhf: null,
+      scopeSide: false,
       // SS — Band Scope settings
       scope: { mode: null, span: null, speed: null, level: null, att: null, color: null, marker: null },
+      firmware: { main: null, display: null, sdr: null, dsp: null, spa1: null, fc80: null },
       lastUpdate: Date.now(),
       error: null,
     }
@@ -190,9 +196,9 @@ class SerialManager extends EventEmitter {
   }
 
   // ── Send a single CAT command and await the response ──
-
   async sendCommand(cmd, timeoutMs = 1500) {
     if (!this.port?.isOpen) throw new Error('Not connected')
+    if (DEBUG) console.log(`[serial-to-send-wait] ${cmd}`)
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.queue = this.queue.filter(e => e !== entry)
@@ -211,22 +217,17 @@ class SerialManager extends EventEmitter {
   }
 
   // ── Send a CAT command without waiting for a response (fire & forget) ──
-
   sendCommandNoWait(cmd) {
     if (!this.port?.isOpen) throw new Error('Not connected')
+    if (DEBUG) console.log(`[serial-to-send-nowait] ${cmd}`)
     return new Promise((resolve, reject) => {
       this.port.write(cmd + ';', (err) => err ? reject(err) : resolve())
     })
   }
 
   // ── Auto Information ───────────────────────────────────
-
   async _enableAutoInfo() {
-    try {
-      await this.sendCommand('AI1')
-    } catch (e) {   
-    
-    }
+    try { await this.sendCommand('AI1') } catch (e) { /* ignore */ }
     try {
       await this.sendCommand('AI')
       this.state.autoInfo = true
@@ -239,13 +240,12 @@ class SerialManager extends EventEmitter {
   }
 
   // ── Initial full-state sync after connect ─────────────
-
   async _initialSync() {
     // AI mode is already active — send queries fire-and-forget.
     // The transceiver will reply with unsolicited frames that _handleResponse will parse.
     const INIT_CMDS = ['FA', 'FB', 'MD0', 'MD1', 'TX', 'MX', 'ST', 'GT0', 'GT1', 'AG0', 'AG1', 'RG0', 'RG1', 'PC', 'RI0',
                        'AO', 'MG', 'PR0', 'PR1', 'PL', 'VX', 'VG', 'SF', 'FR', 'FT', 'CT0', 'CT1', 'CN00', 'CN01', 'CN10', 'CN11', 'RL0',
-                       'RL1', 'RA0', 'LK', 'SQ0', 'SQ1', 'SS05', 'SS04', 'SS00', 'SS03', 'SS06']
+                       'RL1', 'RA0', 'LK', 'SQ0', 'SQ1', 'SS05', 'SS04', 'SS00', 'SS03', 'SS06', 'PA0', 'PA1', 'PA2', 'VE0', 'VE1', 'VE2', 'VE3', 'VE4', 'VE5']
     for (const cmd of INIT_CMDS) {
       if (!this.port?.isOpen) break
       try { await this.sendCommandNoWait(cmd) } catch { /* non-fatal */ }
@@ -263,7 +263,7 @@ class SerialManager extends EventEmitter {
     }
 
     const prefix = response.substring(0, 2).toUpperCase()
-    //console.log(`[serial-received] ${response}`)
+    if (DEBUG) console.log(`[serial-received] ${response}`)
 
     // If the head of the queue is expecting this prefix, resolve it.
     // Pass the original queued command so the parser can use it as a
@@ -292,6 +292,18 @@ class SerialManager extends EventEmitter {
     switch (cmd) {
       case 'FA': this.state.mainFreq = parseInt(params, 10) || null; break
       case 'FB': this.state.subFreq = parseInt(params, 10) || null; break
+      case 'FD': {
+        this.state.scopeSide = params[0] === '1' ? 1 : 0;
+        const CMDS = [`SS${this.state.scopeSide}5`, `SS${this.state.scopeSide}4`, `SS${this.state.scopeSide}0`, `SS${this.state.scopeSide}3`, `SS${this.state.scopeSide}6`];
+        (async () => {
+          for (const c of CMDS) {
+            if (!this.port?.isOpen) break
+            try { await this.sendCommandNoWait(c) } catch { /* non-fatal */ }
+            await new Promise(r => setTimeout(r, 40))
+          }
+        })()
+        break
+      }
       case 'MD':
         if (params[0] === '0') this.state.mainMode = MODE_MAP[params[1]?.toUpperCase()] ?? params[1] ?? null
         else if (params[0] === '1') this.state.subMode = MODE_MAP[params[1]?.toUpperCase()] ?? params[1] ?? null
@@ -401,7 +413,31 @@ class SerialManager extends EventEmitter {
          if (mode) this.state.funcKnob = FUNC_KNOB[mode] ?? mode
          break
       }
+      // VE — firmware version query: VEP1P2…; raw params stored as-is
+      case 'VE':
+        if (params.length >= 5) {
+          const s = { ...this.state.firmware }
+          if      (params[0] === '0') s.main  = params.substring(2, 6)
+          else if (params[0] === '1') s.display = params.substring(2, 6)
+          else if (params[0] === '2') s.sdr  = params.substring(2, 6)
+          else if (params[0] === '3') s.dsp = params.substring(2, 6)
+          else if (params[0] === '4') s.spa1  = params.substring(2, 6)
+          else if (params[0] === '5') s.fc80  = params.substring(2, 6)
+          this.state.firmware = s   // new object reference — delta will detect it
+        }
+        break
       case 'RA': this.state.rfAttenuator = params[1] === '1' ? 1 : 0; break
+      // PA — PRE-AMP: PAP1P2; P1=band(0=HF/50MHz,1=VHF,2=UHF)
+      // P2 for HF/50MHz: 0=IPO, 1=AMP1, 2=AMP2
+      // P2 for VHF/UHF:  0=OFF, 1=ON
+      case 'PA': {
+        const band = params[0]
+        const val  = parseInt(params[1], 10)
+        if (band === '0') this.state.preAmpHf  = isNaN(val) ? null : val   // 0=IPO,1=AMP1,2=AMP2
+        else if (band === '1') this.state.preAmpVhf = val === 1
+        else if (band === '2') this.state.preAmpUhf = val === 1
+        break
+      }
       // FT — which side is set as transmitter (0=MAIN, 1=SUB)
       case 'FT': this.state.txVfo = params[0] === '1' ? 1 : 0; break
       // FR — receiver mode: "00"=Dual receive, "01"=Single receive
@@ -622,11 +658,13 @@ const server = http.createServer(async (req, res) => {
       // SS has no VFO byte — query is just 'SS'.
       // SQ / AG / RG include a VFO byte at position [2] — query is e.g. 'SQ0', 'AG1'.
       let followUpQuery = null
-      /*if (prefix === 'SS' && cmd.length > 2) {
-        followUpQuery = 'SS'
-      } else if (['SQ', 'AG', 'RG'].includes(prefix) && cmd.length > 3) {
+      if (prefix === 'SS' && cmd.length > 2) {
+        followUpQuery = 'SS' + cmd.substring(2, 4)
+      } else if (['RG'].includes(prefix) && cmd.length > 3) {
         followUpQuery = prefix + cmd[2]   // e.g. 'SQ0', 'AG1', 'RG0'
-      }*/
+      } else if (prefix === 'PA' && cmd.length > 2) {
+        //followUpQuery = 'PA' + cmd[2]     // e.g. 'PA0', 'PA1', 'PA2'
+      }
       if (followUpQuery) {
         setTimeout(() => manager.sendCommandNoWait(followUpQuery).catch(() => {}), 150)
       }

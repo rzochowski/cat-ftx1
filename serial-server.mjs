@@ -62,6 +62,7 @@ class SerialManager extends EventEmitter {
       txState: false, mox: false, split: false, lock: null,
       agcMain: null, rfGainMain: null, afGainMain: null, sqMain: null,
       agcSub: null, rfGainSub: null, afGainSub: null, sqSub: null,
+      sqlRfMode: null,
       powerLevel: null, radioInfo: null,
       amcLevel: null,
       micGain: null,
@@ -79,6 +80,9 @@ class SerialManager extends EventEmitter {
       mainDcsCode:   null, subDcsCode:   null,
       dnrMain: null,
       dnrSub: null,
+      mainBandwidth: null, subBandwidth: null,   // SH index (0-based, mode-dependent)
+      mainShift: null, subShift: null,            // IS value 0-4999 (2499 = center / 0 Hz)
+      narrowMain: null, narrowSub: null,          // NA: true=ON, false=OFF
       rfAttenuator: false,
       preAmpHf: null,
       preAmpVhf: null,
@@ -172,6 +176,10 @@ class SerialManager extends EventEmitter {
         // 3. Fire-and-forget initial sync (AI already active, no responses expected)
         await this._initialSync()
 
+        //this.emit('stateChange', this.getState())
+        //await
+        this._initialSync2()
+
         this.emit('stateChange', this.getState())
         resolve()
       })
@@ -244,10 +252,21 @@ class SerialManager extends EventEmitter {
   async _initialSync() {
     // AI mode is already active — send queries fire-and-forget.
     // The transceiver will reply with unsolicited frames that _handleResponse will parse.
-    const INIT_CMDS = ['FA', 'FB', 'MD0', 'MD1', 'TX', 'MX', 'ST', 'GT0', 'GT1', 'AG0', 'AG1', 'RG0', 'RG1', 'PC', 'RI0',
-                       'AO', 'MG', 'PR0', 'PR1', 'PL', 'VX', 'VG', 'SF', 'FR', 'FT', 'CT0', 'CT1', 'CN00', 'CN01', 'CN10', 'CN11', 'RL0',
-                       'RL1', 'RA0', 'LK', 'SQ0', 'SQ1', 'SS05', 'SS04', 'SS00', 'SS03', 'SS06', 'PA0', 'PA1', 'PA2', 'VE0', 'VE1', 'VE2', 'VE3', 'VE4', 'VE5',
-                       'EX030704']
+    const INIT_CMDS = ['FA', 'FB', 'MD0', 'MD1', 'TX', 'ST', 'GT0', 'GT1', 'AG0', 'AG1', 'RG0', 'RG1', 'PC', 'RI0', 'FR', 'FT', 'SS04' ]
+    for (const cmd of INIT_CMDS) {
+      if (!this.port?.isOpen) break
+      try { await this.sendCommandNoWait(cmd) } catch { /* non-fatal */ }
+      await new Promise(r => setTimeout(r, 40))
+    }
+  }
+
+  // ── Initial full-state sync after connect ─────────────
+  async _initialSync2() {
+    // AI mode is already active — send queries fire-and-forget.
+    // The transceiver will reply with unsolicited frames that _handleResponse will parse.
+    const INIT_CMDS = ['NA0', 'NA1', 'AO', 'MG', 'PR0', 'PR1', 'PL', 'VX', 'VG', 'SF', 'CT0', 'CT1', 'CN00', 'CN01', 'CN10', 'CN11', 'RL0',
+      'RL1', 'RA0', 'LK', 'SQ0', 'SQ1', 'SS05', 'SS00', 'SS03', 'SS06', 'PA0', 'PA1', 'PA2', 'VE0', 'VE1', 'VE2', 'VE3', 'VE4', 'VE5',
+      'EX030704', 'SH0', 'IS0', 'EX030102']
     for (const cmd of INIT_CMDS) {
       if (!this.port?.isOpen) break
       try { await this.sendCommandNoWait(cmd) } catch { /* non-fatal */ }
@@ -284,16 +303,12 @@ class SerialManager extends EventEmitter {
   }
 
   // ── CAT response decoder ───────────────────────────────
-  //
   // sourceCmd — the original command string from the queue (e.g. "SM1").
-  // Used as a discriminator fallback when the radio's response payload
-  // does not reliably encode the VFO byte (FTX-1 always returns '0' in
-  // SM responses regardless of which receiver was queried).
-
   _parseResponse(cmd, params, sourceCmd = null) {
     switch (cmd) {
       case 'FA': this.state.mainFreq = parseInt(params, 10) || null; break
       case 'FB': this.state.subFreq = parseInt(params, 10) || null; break
+      // undocumented, switching the waterfall scope
       case 'FD': {
         this.state.scopeSide = params[0] === '1' ? 1 : 0;
         const CMDS = [`SS${this.state.scopeSide}5`, `SS${this.state.scopeSide}4`, `SS${this.state.scopeSide}0`, `SS${this.state.scopeSide}3`, `SS${this.state.scopeSide}6`];
@@ -306,10 +321,20 @@ class SerialManager extends EventEmitter {
         })()
         break
       }
+      // modulation (mode)
       case 'MD':
-        if (params[0] === '0') this.state.mainMode = MODE_MAP[params[1]?.toUpperCase()] ?? params[1] ?? null
-        else if (params[0] === '1') this.state.subMode = MODE_MAP[params[1]?.toUpperCase()] ?? params[1] ?? null
+        if (params[0] === '0') {
+          this.state.mainMode = MODE_MAP[params[1]?.toUpperCase()] ?? params[1] ?? null
+          if ((this.state.mainMode === "FM-N")||(this.state.mainMode === "AM-N")||(this.state.mainMode === "DATA-FM-N")) this.state.narrowMain = 1
+          if ((this.state.mainMode === "FM")||(this.state.mainMode === "AM")||(this.state.mainMode === "DATA-FM")) this.state.narrowMain = 0
+        }
+        else if (params[0] === '1') {
+          this.state.subMode = MODE_MAP[params[1]?.toUpperCase()] ?? params[1] ?? null
+          if ((this.state.subMode === "FM-N")||(this.state.subMode === "AM-N")||(this.state.subMode === "DATA-FM-N")) this.state.narrowSub = 1
+          if ((this.state.subMode === "FM")||(this.state.subMode === "AM")||(this.state.subMode === "DATA-FM")) this.state.narrowSub = 0
+        }
         break
+      // S-meter (not used, RM instead)
       case 'SM': {
         const vfo = sourceCmd ? sourceCmd[2] : params[0]
         if (vfo === '0') this.state.mainSmeter = parseInt(params.substring(1), 10)
@@ -428,14 +453,11 @@ class SerialManager extends EventEmitter {
           this.state.firmware = s   // new object reference — delta will detect it
         }
         break
-      // EX — extended menu: EX030704P; P=0(ANT1) or 1(ANT2)
       case 'EX':
         if (params.startsWith('030704')) this.state.antSelect = params[6] === '1' ? 1 : 0
+        else if (params.startsWith('030102')) this.state.sqlRfMode = parseInt(params[6], 10)
         break
       case 'RA': this.state.rfAttenuator = params[1] === '1' ? 1 : 0; break
-      // PA — PRE-AMP: PAP1P2; P1=band(0=HF/50MHz,1=VHF,2=UHF)
-      // P2 for HF/50MHz: 0=IPO, 1=AMP1, 2=AMP2
-      // P2 for VHF/UHF:  0=OFF, 1=ON
       case 'PA': {
         const band = params[0]
         const val  = parseInt(params[1], 10)
@@ -474,11 +496,32 @@ class SerialManager extends EventEmitter {
         }
         break
       }
+      // SH — Filter bandwidth index: SH P1 P2; P1=VFO(0/1), P2=2-digit index
+      case 'SH': {
+        const vfo = sourceCmd ? sourceCmd[2] : params[0]
+        const idx = parseInt(params.substring(2,4), 10)
+        if (vfo === '0') this.state.mainBandwidth = isNaN(idx) ? null : idx
+        else if (vfo === '1') this.state.subBandwidth = isNaN(idx) ? null : idx
+        break
+      }
+      // IS — IF Shift: IS P1 P2P3P4P4P4P4; P1=VFO(0/1), P2=+/- P4=4-digit value 0000-1200 (0=center)
+      case 'IS': {
+        const vfo = params[0]
+        const val = parseInt(params.substring(2), 10)
+        if (vfo === '0') this.state.mainShift = isNaN(val) ? null : val
+        else if (vfo === '1') this.state.subShift = isNaN(val) ? null : val
+        break
+      }
+      // NA — Narrow mode: NA P1 P2; P1=VFO(0/1), P2=0(OFF)/1(ON)
+      case 'NA': {
+        const vfo = sourceCmd ? sourceCmd[2] : params[0]
+        if (vfo === '0') this.state.narrowMain = params[1] === '1' ? 1 : 0;
+        else if (vfo === '1') this.state.narrowSub = params[1] === '1' ? 1 : 0;
+        break
+      }
       // LK — Dial Lock (0=OFF, 1=ON)
       case 'LK': this.state.lock = params[0] === '1'; break
       // SS — Band Scope settings; FTX-1 sends one sub-parameter per frame.
-      // params[1] identifies the field; always create a NEW scope object so
-      // computeDelta detects the change via reference inequality.
       case 'SS': {
         if (params.length >= 3) {
           const s = { ...this.state.scope }

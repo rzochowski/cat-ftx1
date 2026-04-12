@@ -1,13 +1,20 @@
 {
   "name": "cat-ftx1",
+  "version": "1.0.1",
+  "description": "Yaesu FTX-1 CAT Controller",
+  "author": "SP9AX",
   "private": true,
+  "main": "electron/main.mjs",
   "scripts": {
     "dev": "concurrently -n serial,nuxt -c cyan,green \"node serial-server.mjs\" \"nuxt dev\"",
     "serial": "node serial-server.mjs",
     "build": "nuxt build",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "electron:dev": "nuxt build && electron .",
+    "electron:rebuild": "electron-rebuild -f -w serialport",
+    "electron:build": "nuxt build && electron-rebuild -f -w serialport && electron-builder"
   },
   "dependencies": {
     "@serialport/parser-readline": "^12.0.0",
@@ -17,8 +24,32 @@
     "serialport": "^12.0.0",
     "shell-quote": "^1.8.3"
   },
+  "build": {
+    "appId": "com.sp9ax.cat-ftx1",
+    "productName": "CAT FTX-1",
+    "files": [
+      "electron/**/*"
+    ],
+    "extraResources": [
+      { "from": ".output", "to": ".output" },
+      { "from": "serial-server.mjs", "to": "serial-server.mjs" },
+      { "from": "cat-presets.json", "to": "cat-presets.json" },
+      { "from": "node_modules/serialport", "to": "node_modules/serialport" },
+      { "from": "node_modules/@serialport", "to": "node_modules/@serialport" },
+      { "from": "node_modules/bindings", "to": "node_modules/bindings" },
+      { "from": "node_modules/file-uri-to-path", "to": "node_modules/file-uri-to-path" },
+      { "from": "node_modules/debug", "to": "node_modules/debug" },
+      { "from": "node_modules/ms", "to": "node_modules/ms" }
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "electron": "^41.1.1",
+    "@electron/rebuild": "^3.0.0",
+    "electron-builder": "^24.13.3",
     "typescript": "^5.0.0",
     "vue-tsc": "^2.0.0"
   }

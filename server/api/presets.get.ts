@@ -16,7 +16,9 @@ export interface PresetsConfig {
 
 export default defineEventHandler((): PresetsConfig => {
   try {
-    const configPath = resolve(process.cwd(), 'cat-presets.json')
+    const configPath = process.env.CAT_RESOURCES_PATH
+      ? resolve(process.env.CAT_RESOURCES_PATH, 'cat-presets.json')
+      : resolve(process.cwd(), 'cat-presets.json')
     const raw = readFileSync(configPath, 'utf-8')
     const config = JSON.parse(raw) as PresetsConfig
     if (!Array.isArray(config.presets)) {

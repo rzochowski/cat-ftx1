@@ -141,14 +141,13 @@
             'vfo-card--switchable': state.rxMode === 'single' && state.txVfo === 0 && !state.split,
           }"
         >
-          <div
-            v-if="state.rxMode === 'single' && state.txVfo === 0 && !state.split"
-            class="vfo-switch-overlay"
-            @click="switchToVfo('1')"
-          />
+          <div v-if="state.rxMode === 'single' && state.txVfo === 0 && !state.split" class="vfo-switch-overlay" @click="switchToVfo('1')" />
           <div class="vfo-header">
             <span class="vfo-label">SUB</span>
-            <span v-if="state.txVfo === 1" class="tx-vfo-badge">TX/RX VFO</span>
+            <span v-if="state.txVfo === 1" class="tx-vfo-badge">TX/RX</span>
+            <span v-else class="rx-vfo-badge" @click="switchToVfo('1')">RX</span>
+            <button v-if="state.txVfo === 1" class="band-sel btn-up" :disabled="state.txState || state.mox" @click="sendUp()">Up</button>
+            <button v-if="state.txVfo === 1" class="band-sel btn-up" :disabled="state.txState || state.mox" @click="sendDn()">Dn</button>
             <button
               class="band-sel"
               :disabled="bandBusy || state.txState || state.mox"
@@ -173,6 +172,10 @@
               </template>
             </div>
             <span class="freq-unit">MHz</span>
+            <!-- BandwidthDisplay :mode="state.subMode" :bandwidth="state.subBandwidth" :shift="state.subShift"
+              @update:bandwidth="setBandwidth('1', $event)"
+              @update:shift="setShift('1', $event)"
+            / -->
             <div v-if="isFmMode(state.subMode) && state.subSqlType !== null && state.subSqlType !== 0" class="sql-row">
             <span class="sql-badge" :style="{ background: sqlTypeColor(state.subSqlType) + '28', borderColor: sqlTypeColor(state.subSqlType), color: sqlTypeColor(state.subSqlType) }">
               {{ sqlTypeLabel(state.subSqlType) }}
@@ -184,11 +187,12 @@
           </div>
           <SMeter :value="state.subSmeter" label="SUB S-meter" />
           <LevelBar :value="state.afGainSub" label="VOLUME" color="linear-gradient(90deg,#a60f0f,#c60f0f)" :clickable="true" :wheelable="true" @update="setAfGain('1', $event)" />
-          <LevelBar v-if="isRfGainMode(state.subMode)" :value="state.rfGainSub" label="RF GAIN" color="linear-gradient(90deg,#f59e0b,#fcd34d)" :clickable="true" @update="setRfGain('1', $event)" />
-          <LevelBar v-else :value="state.sqSub" label="SQUELCH" color="linear-gradient(90deg,#f59e0b,#fcd34d)" :clickable="true" @update="setSquelch('1', $event)" />
+          <LevelBar v-if="(state.sqlRfMode===0)||((state.sqlRfMode===2)&&isRfGainMode(state.subMode))" :value="state.rfGainSub" label="RF GAIN" color="linear-gradient(90deg,#f59e0b,#fcd34d)" :clickable="true" @update="setRfGain('1', $event)" />
+          <LevelBar v-if="(state.sqlRfMode===1)||((state.sqlRfMode===2)&&(!isRfGainMode(state.subMode)))" :value="state.sqSub" label="SQUELCH" color="linear-gradient(90deg,#f59e0b,#fcd34d)" :clickable="true" @update="setSquelch('1', $event)" />
           <br/>
           <section class="status-section">
-            <StatusBadge label="AGC" :value="state.agcSub ?? '--'" />
+            <StatusBadge label="AGC" :value="state.agcSub ?? '--'" :active="state.agcSub !== null && state.agcSub !== 'OFF'" color-active="#10b981" :clickable="state.agcSub !== null" :busy="agcBusy" @toggle="cycleAgc('1')" />
+            <StatusBadge label="NARROW" :value="state.narrowSub != null ? (state.narrowSub ? 'ON' : 'OFF') : '--'" :active="state.narrowSub === true" color-active="#a78bfa" :clickable="state.narrowSub !== null" :busy="narrowBusy" @toggle="toggleNarrow('1')" />
             <div class="dnr-wrap" :class="{ 'dnr-wrap--active': isDnrMode(state.subMode) }" @wheel.prevent="onDnrWheel('1', $event)">
               <StatusBadge label="DNR" :value="state.dnrSub != null ? String(state.dnrSub) : '--'" :active="isDnrMode(state.subMode) && state.dnrSub != null && state.dnrSub !== 'OFF' && state.dnrSub !== 0" color-active="#22d3ee" />
             </div>
@@ -214,7 +218,10 @@
           />
           <div class="vfo-header">
             <span class="vfo-label">MAIN</span>
-            <span v-if="state.txVfo === 0" class="tx-vfo-badge">TX/RX VFO</span>
+            <span v-if="state.txVfo === 0" class="tx-vfo-badge">TX/RX</span>
+            <span v-else class="rx-vfo-badge"  @click="switchToVfo('0')">RX</span>
+            <button v-if="state.txVfo === 0" class="band-sel btn-up" :disabled="state.txState || state.mox" @click="sendUp()">Up</button>
+            <button v-if="state.txVfo === 0" class="band-sel btn-up" :disabled="state.txState || state.mox" @click="sendDn()">Dn</button>
             <button
                 class="band-sel"
                 :disabled="bandBusy || state.txState || state.mox"
@@ -239,6 +246,13 @@
               </template>
             </div>
             <span class="freq-unit">MHz</span>
+            <BandwidthDisplay
+              :mode="state.mainMode"
+              :bandwidth="state.mainBandwidth"
+              :shift="state.mainShift"
+              @update:bandwidth="setBandwidth('0', $event)"
+              @update:shift="setShift('0', $event)"
+            />
             <div v-if="isFmMode(state.mainMode) && state.mainSqlType !== null && state.mainSqlType !== 0" class="sql-row">
               <span class="sql-badge" :style="{ background: sqlTypeColor(state.mainSqlType) + '28', borderColor: sqlTypeColor(state.mainSqlType), color: sqlTypeColor(state.mainSqlType) }">
                 {{ sqlTypeLabel(state.mainSqlType) }}
@@ -249,11 +263,12 @@
           </div>
           <SMeter :value="state.mainSmeter" label="MAIN S-meter" />
           <LevelBar :value="state.afGainMain" label="VOLUME" color="linear-gradient(90deg,#a60f0f,#c60f0f)" :clickable="true" :wheelable="true" @update="setAfGain('0', $event)" />
-          <LevelBar v-if="isRfGainMode(state.mainMode)" :value="state.rfGainMain" label="RF GAIN" color="linear-gradient(90deg,#f59e0b,#fcd34d)" :clickable="true" @update="setRfGain('0', $event)" />
-          <LevelBar v-else :value="state.sqMain" label="SQUELCH" color="linear-gradient(90deg,#f59e0b,#fcd34d)" :clickable="true" @update="setSquelch('0', $event)" />
+          <LevelBar v-if="(state.sqlRfMode===0)||((state.sqlRfMode===2)&&isRfGainMode(state.subMode))" :value="state.rfGainMain" label="RF GAIN" color="linear-gradient(90deg,#f59e0b,#fcd34d)" :clickable="true" @update="setRfGain('0', $event)" />
+          <LevelBar v-if="(state.sqlRfMode===1)||((state.sqlRfMode===2)&&(!isRfGainMode(state.subMode)))" :value="state.sqMain" label="SQUELCH" color="linear-gradient(90deg,#f59e0b,#fcd34d)" :clickable="true" @update="setSquelch('0', $event)" />
           <br/>
           <section class="status-section">
-            <StatusBadge label="AGC" :value="state.agcMain ?? '--'" />
+            <StatusBadge label="AGC" :value="state.agcMain ?? '--'" :active="state.agcMain !== null && state.agcMain !== 'OFF'" color-active="#10b981" :clickable="state.agcMain !== null" :busy="agcBusy" @toggle="cycleAgc('0')" />
+            <StatusBadge label="NARROW" :value="state.narrowMain != null ? (state.narrowMain ? 'ON' : 'OFF') : '--'" :active="state.narrowMain === true" color-active="#a78bfa" :clickable="state.narrowMain !== null" :busy="narrowBusy" @toggle="toggleNarrow('0')" />
             <div class="dnr-wrap" :class="{ 'dnr-wrap--active': isDnrMode(state.mainMode) }" @wheel.prevent="onDnrWheel('0', $event)">
               <StatusBadge label="DNR" :value="state.dnrMain != null ? String(state.dnrMain) : '--'" :active="isDnrMode(state.mainMode) && state.dnrMain != null && state.dnrMain !== 'OFF' && state.dnrMain !== 0" color-active="#22d3ee" />
             </div>
@@ -275,9 +290,9 @@
         <div class="dnr-wrap" :class="{ 'dnr-wrap--active': state.powerLevel != null }" @wheel.prevent="onPwrWheel">
           <StatusBadge label="PWR" :value="state.powerLevel != null ? state.powerLevel + ' W' : '--'" />
         </div>
-        <StatusBadge label="SCAN" :value="state.radioInfo?.scanning ? 'ON' : 'OFF'" :active="state.radioInfo?.scanning" />
+        <StatusBadge label="SWAP" :value="'<->'" :active="false" :clickable="true" :busy="splitBusy" @toggle="toggleSwap"  />
         <StatusBadge label="TUNER" :value="state.radioInfo?.tuning ? 'TUNING' : 'IDLE'" :active="state.radioInfo?.tuning" />
-        <StatusBadge label="RECORD" :value="state.radioInfo?.recording ? 'ON' : (state.radioInfo?.playing ? 'PLAY' : 'OFF')" :active="state.radioInfo?.recording || state.radioInfo?.playing" />
+        <StatusBadge label="SQL/RF" :value="state.sqlRfMode != null ? (['RF','SQL','SQL FM'][state.sqlRfMode] ?? '--') : '--'" :clickable="true" @toggle="toggleRfSql" />
         <div class="dnr-wrap" :class="{ 'dnr-wrap--active': state.micGain != null }" @wheel.prevent="onMicGainWheel">
           <StatusBadge label="MIC GAIN" :value="state.micGain != null ? String(state.micGain) : '--'" />
         </div>
@@ -627,6 +642,7 @@ interface TransceiverState {
   rfGainSub: string | null
   afGainSub: number | null
   sqSub: number | null
+  sqlRfMode: number | null
   powerLevel: number | null
   radioInfo: RadioInfo | null
   amcLevel: number | null
@@ -646,6 +662,12 @@ interface TransceiverState {
   subDcsCode: number | null
   dnrMain: string | null
   dnrSub: string | null
+  mainBandwidth: number | null
+  subBandwidth: number | null
+  mainShift: number | null
+  subShift: number | null
+  narrowMain: boolean | null
+  narrowSub: boolean | null
   rfAttenuator: boolean
   preAmpHf: number | null
   preAmpVhf: boolean | null
@@ -681,6 +703,7 @@ const defaultState = (): TransceiverState => ({
   rfGainSub: null,
   afGainSub: null,
   sqSub: null,
+  sqlRfMode: null,
   powerLevel: null,
   radioInfo: null,
   amcLevel: null,
@@ -697,6 +720,12 @@ const defaultState = (): TransceiverState => ({
   mainDcsCode: null, subDcsCode: null,
   dnrMain: null,
   dnrSub: null,
+  mainBandwidth: null,
+  subBandwidth: null,
+  mainShift: null,
+  subShift: null,
+  narrowMain: null,
+  narrowSub: null,
   rfAttenuator: false,
   preAmpHf: null,
   preAmpVhf: null,
@@ -763,7 +792,9 @@ function persistChannels() {
 }
 const moxBusy = ref(false)
 const txVfoBusy = ref(false)
-const lockBusy = ref(false)
+const lockBusy   = ref(false)
+const narrowBusy = ref(false)
+const agcBusy    = ref(false)
 let eventSource: EventSource | null = null
 
 // ----------- computed -----------
@@ -843,6 +874,36 @@ async function selectBand(vfo: '0' | '1', code: string) {
   }
 }
 
+async function sendUp() {
+  if (bandBusy.value) return
+  bandBusy.value = true
+  try {
+    await $fetch('/api/command', {
+      method: 'POST',
+      body: { command: `UP` },
+    })
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    bandBusy.value = false
+  }
+}
+
+async function sendDn() {
+  if (bandBusy.value) return
+  bandBusy.value = true
+  try {
+    await $fetch('/api/command', {
+      method: 'POST',
+      body: { command: `DN` },
+    })
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    bandBusy.value = false
+  }
+}
+
 // ----------- CTCSS / DCS lookup -----------
 
 /** CTCSS tone frequencies (Hz) indexed 0–49, per FTX-1 Table 1 */
@@ -867,6 +928,10 @@ const DCS_CODES: readonly number[] = [
 
 const SQL_TYPE_LABELS: Record<number, string> = {
   0: 'OFF', 1: 'CTCSS ENC', 2: 'CTCSS SQL', 3: 'DCS', 4: 'PR FREQ', 5: 'REV TONE',
+}
+
+const SQL_RFG_MODE_LABELS: Record<number, string> = {
+  0: 'RF', 1: 'SQL', 2: 'SQL FM',
 }
 
 const SQL_TYPE_COLORS: Record<number, string> = {
@@ -960,6 +1025,20 @@ async function onDnrWheel(vfo: '0' | '1', event: WheelEvent) {
   } catch (e: any) {
     lastError.value = e.message
   }
+}
+
+async function setBandwidth(vfo: '0' | '1', idx: number) {
+  try {
+    await $fetch('/api/command', { method: 'POST', body: { command: `SH${vfo}0${String(idx).padStart(2, '0')}` } })
+  } catch (e: any) { lastError.value = e.message }
+}
+
+async function setShift(vfo: '0' | '1', val: number) {
+  try {
+    const sign = val >= 0 ? '+' : '-';
+    const abs = Math.abs(val).toFixed(0).padStart(4, '0');
+    await $fetch('/api/command', { method: 'POST', body: { command: `IS${vfo}0${sign}${abs}` } })
+  } catch (e: any) { lastError.value = e.message }
 }
 
 const RF_GAIN_MODES = new Set(['LSB', 'USB', 'CW-U', 'CW-L', 'RTTY-L', 'RTTY-U', 'DATA-L', 'DATA-U', 'PSK'])
@@ -1222,6 +1301,9 @@ const MODES = [
 
 const modeBusy = ref(false)
 
+// Modes that carry an implicit Narrow flag (NA=1); all others → NA=0
+const NARROW_MODES = new Set(['FM-N', 'AM-N', 'DATA-FM-N'])
+
 async function selectMode(vfo: '0' | '1', label: string) {
   if (modeBusy.value || !label) return
   const entry = MODES.find(m => m.label === label)
@@ -1454,6 +1536,18 @@ async function togglePreAmpHf() {
   }
 }
 
+async function toggleRfSql() {
+  if (preAmpBusy.value || state.value.preAmpHf === null) return
+  preAmpBusy.value = true
+  try {
+    const next = ((state.value.sqlRfMode) + 1) % 3
+    await $fetch('/api/command', { method: 'POST', body: { command: `EX030102${next}` } })
+  } catch (e: any) { lastError.value = e.message } finally { preAmpBusy.value = false }
+  try {
+    await $fetch('/api/command', { method: 'POST', body: { command: `EX030102` } })
+  } catch (e: any) { lastError.value = e.message } finally {  }
+}
+
 async function togglePreAmpVhf() {
   if (preAmpBusy.value || state.value.preAmpVhf === null) return
   preAmpBusy.value = true
@@ -1538,6 +1632,44 @@ async function toggleLock() {
   }
 }
 
+// GT P1 P2 ; — P1=VFO(0/1), P2=0(OFF) 1(FAST) 2(MID) 3(SLOW) 4(AUTO-F) 5(AUTO-M) 6(AUTO-S)
+const AGC_CYCLE = ['0', '1', '2', '3', '4', '5', '6'] as const
+const AGC_LABEL_TO_CODE: Record<string, string> = {
+  'OFF': '0', 'FAST': '1', 'MID': '2', 'SLOW': '3', 'AUTO-F': '4', 'AUTO-M': '5', 'AUTO-S': '6',
+}
+
+async function cycleAgc(vfo: '0' | '1') {
+  if (agcBusy.value) return
+  const current = vfo === '0' ? state.value.agcMain : state.value.agcSub
+  if (current === null) return
+  const code    = AGC_LABEL_TO_CODE[current] ?? '0'
+  const nextCode = AGC_CYCLE[(AGC_CYCLE.indexOf(code as typeof AGC_CYCLE[number]) + 1) % AGC_CYCLE.length]
+  const nextCodeToSend = (parseInt(nextCode, 10)  > 4) ? '0' : nextCode
+  agcBusy.value = true
+  try {
+    await $fetch('/api/command', { method: 'POST', body: { command: `GT${vfo}${nextCodeToSend}` } })
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    agcBusy.value = false
+  }
+}
+
+async function toggleNarrow(vfo: '0' | '1') {
+  if (narrowBusy.value) return
+  const current = vfo === '0' ? state.value.narrowMain : state.value.narrowSub
+  if (current === null) return
+  narrowBusy.value = true
+  try {
+    // NA P1 P2 ; — P1=VFO(0/1), P2=0(OFF)/1(ON)
+    await $fetch('/api/command', { method: 'POST', body: { command: `NA${vfo}${current ? '0' : '1'}` } })
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    narrowBusy.value = false
+  }
+}
+
 const SQL_TYPE_MAX = 5
 
 async function cycleSqlType(vfo: '0' | '1', current: number | null) {
@@ -1564,6 +1696,16 @@ async function setSquelch(vfo: '0' | '1', value: number) {
     method: 'POST',
     body: { command: `SQ${vfo}${String(val).padStart(3, '0')}` },
   }).catch((e: any) => { lastError.value = e.message })
+  if (vfo==='1') {
+    await $fetch('/api/command', {
+      method: 'POST',
+      body: { command: `SQ1` },
+    }).catch((e: any) => { lastError.value = e.message })
+    await $fetch('/api/command', {
+      method: 'POST',
+      body: { command: `SQ0` },
+    }).catch((e: any) => { lastError.value = e.message })
+  }
 }
 
 async function setRfGain(vfo: '0' | '1', value: number) {
@@ -1630,6 +1772,20 @@ async function toggleSplit() {
   try {
     // ST P1 ; — P1: 0=OFF, 1=ON
     const cmd = state.value.split ? 'ST0' : 'ST1'
+    await $fetch('/api/command', { method: 'POST', body: { command: cmd } })
+  } catch (e: any) {
+    lastError.value = e.message
+  } finally {
+    splitBusy.value = false
+  }
+}
+
+async function toggleSwap() {
+  if (splitBusy.value) return
+  splitBusy.value = true
+  try {
+    // ST P1 ; — P1: 0=OFF, 1=ON
+    const cmd = 'SV'
     await $fetch('/api/command', { method: 'POST', body: { command: cmd } })
   } catch (e: any) {
     lastError.value = e.message
@@ -1753,7 +1909,9 @@ async function applyChannel(ch: ChannelConfig) {
   cmds.push((vfo === '0' ? 'FA' : 'FB') + String(ch.freq).padStart(9, '0'))
   if (ch.mode) {
     const entry = MODES.find(m => m.label === ch.mode)
-    if (entry) cmds.push(`MD${vfo}${entry.code}`)
+    if (entry) {
+      cmds.push(`MD${vfo}${entry.code}`)
+    }
   }
   if (ch.sqlType !== null) cmds.push(`CT${vfo}${ch.sqlType}`)
   if (ch.ctcssIdx !== null) cmds.push(`CN${vfo}0${String(ch.ctcssIdx).padStart(3, '0')}`)
@@ -2069,9 +2227,24 @@ body {
   background: rgba(248, 81, 73, .15);
   border: 1px solid rgba(248, 81, 73, .4);
   border-radius: 4px;
-  padding: 1px 5px;
+  padding: 4px 5px;
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+.rx-vfo-badge {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--green);
+  background: rgba(81, 248, 73, .15);
+  border: 1px solid rgba(81, 248, 73, .4);
+  border-radius: 4px;
+  padding: 4px 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
 }
 
 .vfo-header {
@@ -2198,6 +2371,11 @@ body {
   padding: 12px;
 }
 
+.btn-up {
+  width: 40px;
+  flex: none;
+}
+
 .mode-modal-btn {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -2269,7 +2447,7 @@ body {
 }
 
 .freq-display.freq-tx { color: var(--red); }
-.freq-sub { font-size: 34px; color: #c9d1d9; }
+.freq-sub { font-size: 42px; color: #c9d1d9; }
 
 .freq-sep {
   width: 1px;
@@ -2291,7 +2469,7 @@ body {
   white-space: nowrap;
 }
 
-.freq-tuner.freq-sub { font-size: 34px; color: #c9d1d9; }
+.freq-tuner.freq-sub { font-size: 42px; color: #c9d1d9; }
 .freq-tuner.freq-tx  { color: var(--red); }
 
 .freq-dot {
@@ -2324,7 +2502,7 @@ body {
 
 .freq-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   margin-bottom: 12px;
   margin-top: 22px;
@@ -2335,6 +2513,8 @@ body {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 2px;
+  padding-top: 18px;
+  padding-left: 4px;
 }
 
 /* ── Status section ── */

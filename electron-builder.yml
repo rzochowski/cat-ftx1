@@ -1,0 +1,15 @@
+# electron-builder.yml
+appId: pl.cat.ftx1
+productName: CAT FTX-1
+files:
+  - electron/**
+  - .output/**
+  - serial-server.mjs
+  - cat-presets.json
+mac:
+  target: dmg
+win:
+  target: nsis
+linux:
+  target: AppImage
+

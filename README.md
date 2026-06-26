@@ -31,6 +31,7 @@ When using the SPA-1 (Optima) amplifier, the CAT-3 port is used for communicatio
 - Adjustment of volume, squelch, and RF gain via mouse click.
 - Added support for band scope settings with distinction between main and sub VFO.
 - Added information about the transceiver firmware versions.
+- Packages update
 
 ### Working with FTX-1 Memory ###
 Currently, the program does not access the internal channels memory of the FTX-1 in any way.
@@ -41,4 +42,4 @@ The program is still in the early phase and may contain errors; it uses actual t
 In some cases, the transceiver\'s responses are incorrect (e.g., setting the squelch on VFO Sub correctly sets the value, but the transceiver reports that the value for VFO Main has been changed).
 The direction of the program\'s future development will depend on users feedback.
 
-**Author:** SP9AX
+**Authors:** SP9AX, S-meter history by SQ9PD

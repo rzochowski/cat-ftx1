@@ -1,0 +1,13 @@
+diff --git a/node_modules/@nuxt/vite-builder/dist/index.mjs b/node_modules/@nuxt/vite-builder/dist/index.mjs
+index 6529bd8..0b9aef6 100644
+--- a/node_modules/@nuxt/vite-builder/dist/index.mjs
++++ b/node_modules/@nuxt/vite-builder/dist/index.mjs
+@@ -88,7 +88,7 @@ function resolveServerEntry(config) {
+ 	const input = config.environments.ssr?.build.rollupOptions.input ?? config.build.rollupOptions.input;
+ 	if (input) {
+ 		if (typeof input === "string") return input;
+-		if (!Array.isArray(input) && input.server) return input.server;
++		if (!Array.isArray(input) && (input.server ?? input.entry)) return input.server ?? input.entry;
+ 	}
+ 	throw new Error("No entry found in rollupOptions.input");
+ }
